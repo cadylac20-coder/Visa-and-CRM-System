@@ -113,15 +113,15 @@ def init_db():
     """)
 
     # ── Seed admin user ───────────────────────────────────────────────────────
-    from passlib.hash import bcrypt as bc
-    admin_hash = bc.hash("admin123")
+    import bcrypt as bc
+    admin_hash = bc.hashpw(b"admin123", bc.gensalt()).decode()
     c.execute("""
         INSERT OR IGNORE INTO admin_users (email, name, password, role)
         VALUES (?, ?, ?, ?)
     """, ("admin@uniglobemkov.in", "Admin User", admin_hash, "superadmin"))
 
     # ── Seed demo client + application ───────────────────────────────────────
-    client_hash = bc.hash("rahul2024")
+    client_hash = bc.hashpw(b"rahul2024", bc.gensalt()).decode()
     c.execute("""
         INSERT OR IGNORE INTO clients (name, email, phone, password)
         VALUES (?, ?, ?, ?)
