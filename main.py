@@ -20,7 +20,7 @@ from auth import (
     admin_login, client_login,
     hash_password
 )
-from n8n_hooks import on_new_application, on_status_change, on_docs_reminder
+from notifier import on_new_application, on_status_change, on_docs_reminder
 
 # ── Init ──────────────────────────────────────────────────────────────────────
 init_db()
@@ -321,6 +321,7 @@ def admin_create_application(
         app_id=app_id,
         client_name=client["name"],
         client_phone=client["phone"] or "",
+        client_email=client["email"],
         destination=destination,
         visa_type=visa_type,
     )
