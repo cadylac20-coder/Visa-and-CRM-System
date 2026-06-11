@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
-from passlib.hash import bcrypt
+import bcrypt
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from database import get_db
@@ -14,11 +14,11 @@ bearer = HTTPBearer(auto_error=False)
 
 
 def hash_password(pw: str) -> str:
-    return bcrypt.hash(pw)
+    return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(pw: str, hashed: str) -> bool:
-    return bcrypt.verify(pw, hashed)
+    return bcrypt.checkpw(pw.encode(), hashed.encode())
 
 
 def create_token(data: dict) -> str:
