@@ -28,7 +28,7 @@ init_db()
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 app = FastAPI(
     title="MKOV Visa System",
