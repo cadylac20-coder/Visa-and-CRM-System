@@ -47,11 +47,12 @@ def _log(event: str, payload: dict, status: str, channel: str = ""):
             "INSERT INTO webhook_log (event, payload, status) VALUES (?, ?, ?)",
             (event, json.dumps(payload), status)
         )
-        if channel:
-            conn.execute(
-                "INSERT INTO communication_log (message_type, channel, sent_status) VALUES (?, ?, ?)",
-                (event, channel, status)
-            )
+        # FIXED (correct columns, matches DB schema)
+    if channel:
+        conn.execute(
+            "INSERT INTO communication_log (channel, message_type, sent_status) VALUES (?, ?, ?)",
+            (channel, event, status)
+        )
         conn.commit()
         conn.close()
     except Exception as e:
