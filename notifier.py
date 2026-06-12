@@ -13,7 +13,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from database import get_db
 
-# ── Credentials from environment ─────────────────────────────────────────────
+# --- Credentials from environment ─────────────────────────────────────────────
 WA_TOKEN         = os.getenv("WHATSAPP_TOKEN",      "")
 WA_PHONE_ID      = os.getenv("WHATSAPP_PHONE_ID",   "")
 GMAIL_ADDR       = os.getenv("GMAIL_ADDRESS",       "")
@@ -22,7 +22,7 @@ TWILIO_SID       = os.getenv("TWILIO_ACCOUNT_SID",  "")
 TWILIO_AUTH      = os.getenv("TWILIO_AUTH_TOKEN",   "")
 TWILIO_PHONE     = os.getenv("TWILIO_PHONE_NUMBER", "")  # e.g. +15551234567
 
-# ── Status messages ───────────────────────────────────────────────────────────
+# --- Status messages ───────────────────────────────────────────────────────────
 STATUS_MESSAGES = {
     "pending":       "We are awaiting your documents. Please check your document checklist.",
     "docs_received": "We have received your documents and our team is reviewing them.",
@@ -58,7 +58,7 @@ def _log(event: str, payload: dict, status: str, channel: str = ""):
         print(f"[NOTIFIER] DB log error: {e}")
 
 
-# ── WhatsApp ──────────────────────────────────────────────────────────────────
+# --- WhatsApp ──────────────────────────────────────────────────────────────────
 def _send_whatsapp(phone: str, message: str, event: str):
     if not WA_TOKEN or not WA_PHONE_ID:
         print(f"[NOTIFIER] WhatsApp not configured — skipping")
@@ -96,7 +96,7 @@ def _send_whatsapp(phone: str, message: str, event: str):
         return False
 
 
-# ── SMS via Twilio ───────────────────────────────────────────────────────────
+# --- SMS via Twilio ───────────────────────────────────────────────────────────
 def _send_sms(phone: str, message: str, event: str):
     if not TWILIO_SID or not TWILIO_AUTH or not TWILIO_PHONE:
         print(f"[NOTIFIER] SMS not configured — skipping")
@@ -130,7 +130,7 @@ def _send_sms(phone: str, message: str, event: str):
         return False
 
 
-# ── Email ─────────────────────────────────────────────────────────────────────
+# --- Email ─────────────────────────────────────────────────────────────────────
 def _send_email(to_email: str, subject: str, body_text: str, body_html: str, event: str):
     if not GMAIL_ADDR or not GMAIL_PASS:
         print(f"[NOTIFIER] Email not configured — skipping")
