@@ -75,7 +75,7 @@ def init_db():
             doc_type     TEXT NOT NULL,
             file_name    TEXT,
             file_path    TEXT,
-            file_url     TEXT,           ← for cloud storage
+            file_url     TEXT,           -- for cloud storage
             status       TEXT DEFAULT 'missing',
             uploaded_at  DATETIME,
             verified_at  DATETIME,
@@ -89,7 +89,7 @@ def init_db():
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
             country_code        TEXT UNIQUE NOT NULL,
             country_name        TEXT NOT NULL,
-            visa_types_json     TEXT,       ← JSON with all visa types + docs
+            visa_types_json     TEXT,       -- JSON with all visa types + docs
             created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -100,13 +100,13 @@ def init_db():
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             country         TEXT NOT NULL,
             visa_type       TEXT NOT NULL,
-            name            TEXT,                  ← "USA Tourist Standard"
+            name            TEXT,                  -- "USA Tourist Standard"
             description     TEXT,
-            documents_json  TEXT NOT NULL,        ← JSON array of docs
+            documents_json  TEXT NOT NULL,        -- JSON array of docs
             base_price      DECIMAL(10,2) DEFAULT 0,
             discount_percentage DECIMAL(5,2) DEFAULT 0,
             final_price     DECIMAL(10,2),
-            is_default      INTEGER DEFAULT 0,    ← use default checklist
+            is_default      INTEGER DEFAULT 0,    -- use default checklist
             created_by      INTEGER REFERENCES admin_users(id),
             created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -119,9 +119,9 @@ def init_db():
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             client_id       INTEGER NOT NULL REFERENCES clients(id),
             checklist_id    INTEGER REFERENCES custom_checklists(id),
-            discount_type   TEXT,           ← 'percentage' | 'fixed'
+            discount_type   TEXT,           -- 'percentage' | 'fixed'
             discount_value  DECIMAL(10,2),
-            reason          TEXT,           ← "Group booking" | "Referral"
+            reason          TEXT,           -- "Group booking" | "Referral"
             active          INTEGER DEFAULT 1,
             created_by      INTEGER REFERENCES admin_users(id),
             created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -147,7 +147,7 @@ def init_db():
             client_id  INTEGER NOT NULL REFERENCES clients(id),
             app_id     TEXT,
             message    TEXT NOT NULL,
-            channel    TEXT DEFAULT 'portal',  ← portal | whatsapp | sms | email
+            channel    TEXT DEFAULT 'portal',  -- portal | whatsapp | sms | email
             read       INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
@@ -159,12 +159,12 @@ def init_db():
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             app_id       TEXT,
             client_id    INTEGER REFERENCES clients(id),
-            channel      TEXT NOT NULL,     ← whatsapp | sms | email
+            channel      TEXT NOT NULL,     -- whatsapp | sms | email
             phone_number TEXT,
             email_address TEXT,
-            message_type TEXT,              ← checklist | status_update | reminder
+            message_type TEXT,              -- checklist | status_update | reminder
             message_content TEXT,
-            sent_status  TEXT DEFAULT 'pending',  ← pending | sent | failed
+            sent_status  TEXT DEFAULT 'pending',  -- pending | sent | failed
             response     TEXT,
             created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
         )
