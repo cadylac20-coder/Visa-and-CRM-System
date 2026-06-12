@@ -1,540 +1,875 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MKOV Visa — Admin Portal</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-:root {
-  --navy:    #0F2341;
-  --navy2:   #1A3A5C;
-  --blue:    #1D6FA8;
-  --blue2:   #2A8FD4;
-  --teal:    #0AB5A4;
-  --gold:    #E8A422;
-  --red:     #D94040;
-  --green:   #2E8B57;
-  --purple:  #6B46C1;
-  --white:   #FFFFFF;
-  --off:     #F7F9FC;
-  --border:  #D9E4EE;
-  --text:    #1A2B3C;
-  --muted:   #6B7F8F;
-  --light:   #E8F1F8;
-  --shadow:  0 2px 12px rgba(15,35,65,0.10);
-  --radius:  10px;
-}
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--off); color: var(--text); font-family: 'Inter', sans-serif; font-size: 14px; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MKOV Visa Admin Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --navy: #0d3055;
+            --teal: #0ab5a4;
+            --off-white: #f6f8fb;
+            --border: #e0e7f1;
+            --text-main: #1a2b3c;
+            --text-muted: #6b7f8f;
+        }
+        
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--off-white);
+            color: var(--text-main);
+        }
 
-/* Layout */
-.shell { display: flex; min-height: 100vh; }
-.sidebar { width: 220px; background: var(--navy); display: flex; flex-direction: column; flex-shrink: 0; position: fixed; top: 0; left: 0; height: 100vh; z-index: 100; }
-.main { margin-left: 220px; flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
-.topbar { background: var(--white); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
-.content { padding: 24px; flex: 1; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
 
-/* Sidebar */
-.sidebar-logo { padding: 20px 18px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }
-.sidebar-logo .brand { font-size: 16px; font-weight: 600; color: var(--white); letter-spacing: 0.02em; }
-.sidebar-logo .sub   { font-size: 11px; color: rgba(255,255,255,0.45); margin-top: 2px; }
-.nav-section { padding: 14px 10px 6px; font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.08em; }
-.nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 14px; margin: 2px 6px; border-radius: 7px; cursor: pointer; color: rgba(255,255,255,0.65); font-size: 13px; transition: all 0.15s; }
-.nav-item:hover { background: rgba(255,255,255,0.08); color: var(--white); }
-.nav-item.active { background: var(--blue); color: var(--white); }
-.nav-icon { font-size: 16px; width: 20px; text-align: center; }
-.sidebar-bottom { margin-top: auto; padding: 14px; border-top: 1px solid rgba(255,255,255,0.08); }
-.logout-btn { width: 100%; padding: 9px; background: rgba(255,255,255,0.06); border: none; border-radius: 7px; color: rgba(255,255,255,0.6); font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.logout-btn:hover { background: rgba(255,255,255,0.12); color: var(--white); }
+        header {
+            background: linear-gradient(135deg, var(--navy), #1a5a8a);
+            color: white;
+            padding: 24px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+        }
 
-/* Topbar */
-.page-title { font-size: 17px; font-weight: 600; }
-.admin-badge { background: var(--light); color: var(--blue); padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+        header h1 { font-family: 'Cormorant Garamond', serif; font-size: 28px; }
+        header p { opacity: 0.8; margin-top: 4px; }
 
-/* Views */
-.view { display: none; }
-.view.active { display: block; }
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+            border-bottom: 2px solid var(--border);
+        }
 
-/* Stats grid */
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 22px; }
-.stat { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
-.stat-num { font-size: 28px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
-.stat-label { font-size: 12px; color: var(--muted); margin-top: 3px; }
-.stat-icon { font-size: 22px; float: right; opacity: 0.6; }
-.stat.blue  .stat-num { color: var(--blue); }
-.stat.gold  .stat-num { color: var(--gold); }
-.stat.green .stat-num { color: var(--green); }
-.stat.red   .stat-num { color: var(--red); }
+        .tab-btn {
+            padding: 12px 20px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-muted);
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+        }
 
-/* Card */
-.card { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 18px; }
-.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.card-title { font-size: 14px; font-weight: 600; }
+        .tab-btn.active {
+            color: var(--navy);
+            border-bottom-color: var(--navy);
+        }
 
-/* Table */
-.table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; padding: 9px 12px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); background: var(--off); }
-td { padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-tr:last-child td { border-bottom: none; }
-tr:hover td { background: #FAFCFF; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
 
-/* Badges */
-.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; }
-.b-pending   { background: #FEF3C7; color: #92400E; }
-.b-docs      { background: #DBEAFE; color: #1E40AF; }
-.b-review    { background: #EDE9FE; color: #5B21B6; }
-.b-submitted { background: #D1FAE5; color: #065F46; }
-.b-approved  { background: #D1FAE5; color: #065F46; border: 1px solid #6EE7B7; }
-.b-rejected  { background: #FEE2E2; color: #991B1B; }
+        .card {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
 
-/* Avatar */
-.avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--light); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--blue); flex-shrink: 0; }
+        .card h2 {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 20px;
+            margin-bottom: 16px;
+            color: var(--navy);
+        }
 
-/* Buttons */
-.btn { padding: 8px 16px; border-radius: 7px; border: none; font-size: 13px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s; }
-.btn-primary { background: var(--blue); color: var(--white); }
-.btn-primary:hover { background: var(--blue2); }
-.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
-.btn-outline:hover { border-color: var(--blue); color: var(--blue); }
-.btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 5px; }
-.btn-danger { background: var(--red); color: var(--white); }
-.btn-success { background: var(--green); color: var(--white); }
+        .search-box {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
 
-/* Form */
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.field { display: flex; flex-direction: column; gap: 5px; }
-.field label { font-size: 12px; font-weight: 500; color: var(--muted); }
-.field input, .field select, .field textarea {
-  padding: 8px 11px; border: 1px solid var(--border); border-radius: 7px;
-  font-size: 13px; font-family: 'Inter', sans-serif; color: var(--text);
-  background: var(--off); outline: none; transition: border-color 0.15s;
-}
-.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--blue); background: var(--white); }
-.field textarea { resize: vertical; min-height: 70px; }
+        .search-box input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+        }
 
-/* Progress bar */
-.prog-wrap { display: flex; align-items: center; gap: 8px; }
-.prog-bar { height: 5px; width: 80px; background: var(--border); border-radius: 3px; overflow: hidden; }
-.prog-fill { height: 100%; background: var(--blue); border-radius: 3px; transition: width 0.4s; }
+        .btn {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
 
-/* Timeline */
-.timeline { list-style: none; padding: 0; }
-.tl { display: flex; gap: 12px; margin-bottom: 14px; position: relative; }
-.tl:not(:last-child)::before { content:''; position:absolute; left:13px; top:28px; bottom:-14px; width:1px; background:var(--border); }
-.tl-dot { width:26px; height:26px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:12px; }
-.tl-done { background:#D1FAE5; color: var(--green); }
-.tl-now  { background: var(--light); color: var(--blue); }
-.tl-wait { background: var(--off); color: var(--muted); border: 1px solid var(--border); }
-.tl-text { font-size: 13px; }
-.tl-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
+        .btn-primary {
+            background: var(--navy);
+            color: white;
+        }
 
-/* Doc grid */
-.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
-.doc-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 8px; text-align: center; cursor: pointer; transition: all 0.15s; }
-.doc-card:hover { border-color: var(--blue); background: var(--light); }
-.doc-icon { font-size: 22px; margin-bottom: 6px; }
-.doc-name { font-size: 11px; font-weight: 500; }
-.doc-status { font-size: 10px; color: var(--muted); margin-top: 2px; }
-.doc-card.missing  .doc-icon { color: var(--red); }
-.doc-card.uploaded .doc-icon { color: var(--gold); }
-.doc-card.verified .doc-icon { color: var(--green); }
+        .btn-primary:hover {
+            background: #1a5a8a;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(13, 48, 85, 0.2);
+        }
 
-/* Toast */
-.toast { position: fixed; bottom: 24px; right: 24px; background: var(--navy); color: var(--white); padding: 12px 20px; border-radius: 8px; font-size: 13px; z-index: 9999; display: none; box-shadow: var(--shadow); }
-.toast.show { display: block; animation: fadeIn 0.2s ease; }
-@keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+        .btn-secondary {
+            background: var(--off-white);
+            color: var(--navy);
+            border: 1px solid var(--border);
+        }
 
-/* Login */
-.login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--navy); }
-.login-box { background: var(--white); border-radius: 14px; padding: 36px 32px; width: 380px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
-.login-logo { font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
-.login-sub  { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
-.login-field { margin-bottom: 16px; }
-.login-field label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 5px; }
-.login-field input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px; }
-.login-btn { width:100%; padding:11px; background:var(--blue); color:var(--white); border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; margin-top:6px; }
-.login-btn:hover { background:var(--blue2); }
-.login-hint { font-size:11px; color:var(--muted); text-align:center; margin-top:10px; }
-.login-err { background:#FEE2E2; color:var(--red); padding:8px 12px; border-radius:6px; font-size:13px; margin-bottom:12px; display:none; }
+        .btn-secondary:hover {
+            background: white;
+            border-color: var(--navy);
+        }
 
-/* Detail layout */
-.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-@media(max-width:900px){ .detail-grid { grid-template-columns: 1fr; } .form-grid { grid-template-columns: 1fr; } }
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-</style>
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .grid-card {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .grid-card:hover {
+            border-color: var(--navy);
+            box-shadow: 0 4px 12px rgba(13, 48, 85, 0.1);
+        }
+
+        .grid-card h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--navy);
+            margin-bottom: 8px;
+        }
+
+        .grid-card p {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--navy);
+            margin-bottom: 6px;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: 'DM Sans', sans-serif;
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--navy);
+        }
+
+        .close-btn {
+            float: right;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-muted);
+            background: none;
+            border: none;
+        }
+
+        .close-btn:hover {
+            color: var(--navy);
+        }
+
+        .alert {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 13px;
+        }
+
+        .alert-info {
+            background: #e7f3ff;
+            color: #0066cc;
+            border-left: 4px solid #0066cc;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #155724;
+        }
+
+        .checklist-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: var(--off-white);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .checklist-item input[type="checkbox"] {
+            cursor: pointer;
+        }
+
+        .channel-selector {
+            display: flex;
+            gap: 10px;
+            margin: 16px 0;
+        }
+
+        .channel-selector label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            font-weight: 400;
+            margin-bottom: 0;
+        }
+
+        .channel-selector input[type="checkbox"] {
+            cursor: pointer;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        table th {
+            background: var(--off-white);
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--navy);
+            border-bottom: 2px solid var(--border);
+        }
+
+        table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        table tr:hover {
+            background: var(--off-white);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-primary {
+            background: #dde5f4;
+            color: var(--navy);
+        }
+
+        .badge-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .price-display {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--teal);
+            margin: 12px 0;
+        }
+
+        .copy-button {
+            display: inline-block;
+            padding: 8px 12px;
+            background: #f0f0f0;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+            margin: 8px 0;
+        }
+
+        .copy-button:hover {
+            background: var(--navy);
+            color: white;
+            border-color: var(--navy);
+        }
+
+        .spinner {
+            border: 3px solid var(--border);
+            border-top: 3px solid var(--navy);
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
+    <div class="container">
+        <header>
+            <h1>MKOV Visa System — Admin Dashboard</h1>
+            <p>Manage visa applications, requirements, checklists, and client communications</p>
+        </header>
 
-<!-- ══ LOGIN ══════════════════════════════════════════════════════════════ -->
-<div id="login-screen" class="login-screen">
-  <div class="login-box">
-    <div class="login-logo">🛂 MKOV Visa</div>
-    <div class="login-sub">Admin Portal — Staff Access Only</div>
-    <div class="login-err" id="login-err">Invalid credentials. Please try again.</div>
-    <div class="login-field"><label>Email</label><input id="l-email" value="admin@uniglobemkov.in" type="email"></div>
-    <div class="login-field"><label>Password</label><input id="l-pass" value="admin123" type="password" onkeydown="if(event.key==='Enter')doLogin()"></div>
-    <button class="login-btn" onclick="doLogin()">Sign In →</button>
-    <div class="login-hint">Demo: admin@uniglobemkov.in / admin123</div>
-  </div>
-</div>
-
-<!-- ══ APP SHELL ══════════════════════════════════════════════════════════ -->
-<div id="app-shell" class="shell" style="display:none">
-  <aside class="sidebar">
-    <div class="sidebar-logo">
-      <div class="brand">🛂 MKOV Visa</div>
-      <div class="sub">Admin Portal</div>
-    </div>
-    <div class="nav-section">Main</div>
-    <div class="nav-item active" onclick="navTo('dashboard',this)"><span class="nav-icon">📊</span> Dashboard</div>
-    <div class="nav-item" onclick="navTo('applications',this)"><span class="nav-icon">📋</span> Applications</div>
-    <div class="nav-item" onclick="navTo('new-client',this)"><span class="nav-icon">👤</span> Add Client</div>
-    <div class="nav-item" onclick="navTo('new-app',this)"><span class="nav-icon">➕</span> New Application</div>
-    <div class="nav-section">System</div>
-    <div class="nav-item" onclick="navTo('webhooks',this)"><span class="nav-icon">⚡</span> n8n Webhook Log</div>
-    <div class="sidebar-bottom">
-      <button class="logout-btn" onclick="doLogout()">🚪 Sign Out</button>
-    </div>
-  </aside>
-
-  <div class="main">
-    <div class="topbar">
-      <div class="page-title" id="page-title">Dashboard</div>
-      <div class="admin-badge" id="admin-name">Admin</div>
-    </div>
-    <div class="content">
-
-      <!-- DASHBOARD -->
-      <div id="view-dashboard" class="view active">
-        <div class="stats" id="stats-grid"></div>
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">All Applications</div>
-            <button class="btn btn-primary btn-sm" onclick="navTo('new-app',null)">+ New Application</button>
-          </div>
-          <div class="table-wrap"><table>
-            <thead><tr><th>Applicant</th><th>Destination</th><th>Visa</th><th>Applied</th><th>Status</th><th>Progress</th><th></th></tr></thead>
-            <tbody id="apps-table"></tbody>
-          </table></div>
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('overview')">📊 Overview</button>
+            <button class="tab-btn" onclick="switchTab('countries')">🌍 Visa Requirements</button>
+            <button class="tab-btn" onclick="switchTab('checklists')">📋 Checklists</button>
+            <button class="tab-btn" onclick="switchTab('applications')">✈️ Applications</button>
+            <button class="tab-btn" onclick="switchTab('send-message')">💬 Send Message</button>
+            <button class="tab-btn" onclick="switchTab('discounts')">🏷️ Discounts</button>
         </div>
-      </div>
 
-      <!-- APPLICATIONS (filtered) -->
-      <div id="view-applications" class="view">
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">All Applications</div>
-            <div style="display:flex;gap:8px">
-              <select id="filter-status" onchange="filterApps()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
-                <option value="">All statuses</option>
-                <option value="pending">Pending</option>
-                <option value="review">Under Review</option>
-                <option value="submitted">Submitted</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-          </div>
-          <div class="table-wrap"><table>
-            <thead><tr><th>Applicant</th><th>Destination</th><th>Visa</th><th>Applied</th><th>Status</th><th>Progress</th><th></th></tr></thead>
-            <tbody id="apps-table-2"></tbody>
-          </table></div>
-        </div>
-      </div>
-
-      <!-- APPLICATION DETAIL -->
-      <div id="view-detail" class="view">
-        <div style="margin-bottom:16px">
-          <button class="btn btn-outline btn-sm" onclick="navTo('dashboard',null)">← Back</button>
-        </div>
-        <div class="detail-grid">
-          <div>
-            <div class="card" id="detail-info-card"></div>
+        <!-- OVERVIEW TAB -->
+        <div id="overview" class="tab-content active">
             <div class="card">
-              <div class="card-header"><div class="card-title">📁 Documents</div></div>
-              <div class="doc-grid" id="detail-docs"></div>
+                <h2>Dashboard Stats</h2>
+                <p style="color: var(--text-muted);">Total applications, pending reviews, approved visas, and recent activities.</p>
+                <!-- Will be populated by API call -->
             </div>
-          </div>
-          <div>
+        </div>
+
+        <!-- COUNTRIES & VISA REQUIREMENTS TAB -->
+        <div id="countries" class="tab-content">
             <div class="card">
-              <div class="card-header"><div class="card-title">⚙️ Update Status</div></div>
-              <div class="field" style="margin-bottom:10px">
-                <label>New Status</label>
-                <select id="status-sel">
-                  <option value="pending">Pending Documents</option>
-                  <option value="docs_received">Documents Received</option>
-                  <option value="review">Under Review</option>
-                  <option value="submitted">Submitted to Embassy</option>
-                  <option value="approved">Approved ✓</option>
-                  <option value="rejected">Rejected ✗</option>
-                </select>
-              </div>
-              <div class="field" style="margin-bottom:12px">
-                <label>Note (sent to client)</label>
-                <textarea id="status-note" placeholder="Optional note for client..."></textarea>
-              </div>
-              <button class="btn btn-primary" style="width:100%" onclick="updateStatus()">Update + Notify Client ⚡</button>
-              <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">n8n fires WhatsApp + email automatically</div>
+                <h2>Visa Requirements by Country</h2>
+                <div class="search-box">
+                    <input type="text" id="countrySearch" placeholder="Search countries (USA, Canada, Dubai...)">
+                    <button class="btn btn-primary" onclick="searchCountries()">Search</button>
+                </div>
+                
+                <div id="countryResults" class="grid"></div>
             </div>
+
+            <!-- Country Details Modal -->
+            <div id="countryModal" class="modal">
+                <div class="modal-content">
+                    <button class="close-btn" onclick="closeModal('countryModal')">&times;</button>
+                    <div class="modal-header">Country Visa Details</div>
+                    <div id="countryDetails"></div>
+                    <div style="margin-top: 20px">
+                        <button class="btn btn-primary" onclick="copyCountryDetails()">📋 Copy to Clipboard</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CHECKLISTS TAB -->
+        <div id="checklists" class="tab-content">
             <div class="card">
-              <div class="card-header"><div class="card-title">📜 Activity Log</div></div>
-              <ul class="timeline" id="detail-log"></ul>
+                <h2>Custom Visa Checklists</h2>
+                <button class="btn btn-primary" onclick="openModal('newChecklistModal')">+ Create New Checklist</button>
+                
+                <div style="margin-top: 20px">
+                    <div class="search-box">
+                        <input type="text" id="checklistCountry" placeholder="Filter by country...">
+                        <button class="btn btn-secondary" onclick="filterChecklists()">Filter</button>
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Country</th>
+                                <th>Visa Type</th>
+                                <th>Name</th>
+                                <th>Price</th>
+                                <th>Discount</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="checklistTable">
+                            <!-- Populated by API -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
-          </div>
-        </div>
-      </div>
 
-      <!-- ADD CLIENT -->
-      <div id="view-new-client" class="view">
-        <div class="card" style="max-width:560px">
-          <div class="card-header"><div class="card-title">👤 Add New Client</div></div>
-          <div class="form-grid">
-            <div class="field"><label>Full Name</label><input id="nc-name" placeholder="Rahul Sharma"></div>
-            <div class="field"><label>Email</label><input id="nc-email" placeholder="rahul@email.com" type="email"></div>
-            <div class="field"><label>Phone</label><input id="nc-phone" placeholder="+91 98765 43210"></div>
-            <div class="field"><label>Password (for client portal)</label><input id="nc-pass" placeholder="Minimum 8 characters" type="password"></div>
-          </div>
-          <div style="margin-top:16px"><button class="btn btn-primary" onclick="createClient()">Create Client Account</button></div>
-          <div id="nc-result" style="margin-top:10px;font-size:13px"></div>
-        </div>
-      </div>
-
-      <!-- NEW APPLICATION -->
-      <div id="view-new-app" class="view">
-        <div class="card" style="max-width:560px">
-          <div class="card-header"><div class="card-title">➕ New Visa Application</div></div>
-          <div class="form-grid">
-            <div class="field" style="grid-column:1/-1"><label>Client Email</label><input id="na-email" placeholder="client@email.com"></div>
-            <div class="field"><label>Destination</label><input id="na-dest" placeholder="Dubai, Thailand, UK..."></div>
-            <div class="field"><label>Visa Type</label>
-              <select id="na-type">
-                <option value="tourist">Tourist</option>
-                <option value="business">Business</option>
-                <option value="student">Student</option>
-                <option value="transit">Transit</option>
-              </select>
+            <!-- New Checklist Modal -->
+            <div id="newChecklistModal" class="modal">
+                <div class="modal-content">
+                    <button class="close-btn" onclick="closeModal('newChecklistModal')">&times;</button>
+                    <div class="modal-header">Create Custom Checklist</div>
+                    
+                    <div class="form-group">
+                        <label>Country</label>
+                        <input type="text" id="newCountry" placeholder="e.g., USA">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Visa Type</label>
+                        <select id="newVisaType">
+                            <option>tourist</option>
+                            <option>business</option>
+                            <option>student</option>
+                            <option>work</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Checklist Name</label>
+                        <input type="text" id="newChecklistName" placeholder="e.g., USA Tourist Standard">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Documents (one per line)</label>
+                        <textarea id="newDocuments" placeholder="Passport&#10;Photo&#10;Bank Statements&#10;..."></textarea>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
+                        <div class="form-group">
+                            <label>Base Price (₹)</label>
+                            <input type="number" id="newPrice" placeholder="5000">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Discount (%)</label>
+                            <input type="number" id="newDiscount" placeholder="0" min="0" max="100">
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 20px">
+                        <button class="btn btn-primary" onclick="createChecklist()">Create Checklist</button>
+                    </div>
+                </div>
             </div>
-            <div class="field"><label>Travel Date</label><input id="na-date" type="date"></div>
-          </div>
-          <div style="margin-top:16px"><button class="btn btn-primary" onclick="createApplication()">Create Application + Send Checklist</button></div>
-          <div id="na-result" style="margin-top:10px;font-size:13px"></div>
         </div>
-      </div>
 
-      <!-- WEBHOOK LOG -->
-      <div id="view-webhooks" class="view">
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">⚡ n8n Webhook Log</div>
-            <button class="btn btn-outline btn-sm" onclick="loadWebhooks()">↻ Refresh</button>
-          </div>
-          <div class="table-wrap"><table>
-            <thead><tr><th>Time</th><th>Event</th><th>Status</th><th>Payload Preview</th></tr></thead>
-            <tbody id="wh-table"></tbody>
-          </table></div>
+        <!-- APPLICATIONS TAB -->
+        <div id="applications" class="tab-content">
+            <div class="card">
+                <h2>Visa Applications</h2>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>App ID</th>
+                            <th>Client</th>
+                            <th>Destination</th>
+                            <th>Status</th>
+                            <th>Progress</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="applicationsTable">
+                        <!-- Populated by API -->
+                    </tbody>
+                </table>
+            </div>
         </div>
-      </div>
 
+        <!-- SEND MESSAGE TAB -->
+        <div id="send-message" class="tab-content">
+            <div class="card">
+                <h2>Send Message to Client</h2>
+                
+                <div class="form-group">
+                    <label>Application ID</label>
+                    <input type="text" id="sendAppId" placeholder="e.g., VIS-2026-001">
+                </div>
+                
+                <div class="form-group">
+                    <label>Message Type</label>
+                    <select id="messageType" onchange="updateMessageTemplate()">
+                        <option value="checklist">Send Checklist</option>
+                        <option value="status">Send Status Update</option>
+                        <option value="reminder">Send Reminder</option>
+                    </select>
+                </div>
+                
+                <div id="messageOptions"></div>
+                
+                <div class="form-group">
+                    <label>Send Via (select all that apply):</label>
+                    <div class="channel-selector">
+                        <label><input type="checkbox" value="whatsapp" checked> WhatsApp</label>
+                        <label><input type="checkbox" value="sms"> SMS</label>
+                        <label><input type="checkbox" value="email" checked> Email</label>
+                    </div>
+                </div>
+                
+                <button class="btn btn-primary" onclick="sendMessage()">Send Message</button>
+                <div id="messageStatus" style="margin-top: 16px"></div>
+            </div>
+        </div>
+
+        <!-- DISCOUNTS TAB -->
+        <div id="discounts" class="tab-content">
+            <div class="card">
+                <h2>Client Discounts</h2>
+                <button class="btn btn-primary" onclick="openModal('newDiscountModal')">+ Add Discount</button>
+                
+                <table style="margin-top: 20px">
+                    <thead>
+                        <tr>
+                            <th>Client</th>
+                            <th>Type</th>
+                            <th>Value</th>
+                            <th>Reason</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="discountsTable">
+                        <!-- Populated by API -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- New Discount Modal -->
+            <div id="newDiscountModal" class="modal">
+                <div class="modal-content">
+                    <button class="close-btn" onclick="closeModal('newDiscountModal')">&times;</button>
+                    <div class="modal-header">Add Client Discount</div>
+                    
+                    <div class="form-group">
+                        <label>Client Email</label>
+                        <input type="email" id="discountClientEmail" placeholder="client@example.com">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Discount Type</label>
+                        <select id="discountType">
+                            <option>percentage</option>
+                            <option>fixed</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Discount Value</label>
+                        <input type="number" id="discountValue" placeholder="e.g., 10 or 500">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Reason</label>
+                        <input type="text" id="discountReason" placeholder="Group booking, Referral, etc.">
+                    </div>
+                    
+                    <button class="btn btn-primary" onclick="addDiscount()">Add Discount</button>
+                </div>
+            </div>
+        </div>
     </div>
-  </div>
-</div>
 
-<div class="toast" id="toast"></div>
+    <script>
+        const API_BASE = 'https://arya-v1-0-0.onrender.com';
+        const API_KEY = localStorage.getItem('adminToken') || '';
 
-<script>
-const API = window.location.origin;
-let TOKEN = '';
-let ALL_APPS = [];
-let CURRENT_APP_ID = '';
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
-async function doLogin() {
-  const email = document.getElementById('l-email').value;
-  const pass  = document.getElementById('l-pass').value;
-  try {
-    const r = await api('/auth/admin/login', 'POST', { email, password: pass });
-    TOKEN = r.token;
-    document.getElementById('admin-name').textContent = r.name;
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app-shell').style.display = 'flex';
-    loadDashboard();
-  } catch(e) {
-    document.getElementById('login-err').style.display = 'block';
-  }
-}
+        function openModal(modalId) {
+            document.getElementById(modalId).classList.add('active');
+        }
 
-function doLogout() {
-  TOKEN = '';
-  document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('app-shell').style.display = 'none';
-}
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
 
-// ── API helper ────────────────────────────────────────────────────────────────
-async function api(path, method='GET', body=null, form=false) {
-  const opts = {
-    method,
-    headers: { ...(TOKEN ? {'Authorization':'Bearer '+TOKEN} : {}), ...(!form ? {'Content-Type':'application/json'} : {}) }
-  };
-  if (body) opts.body = form ? body : JSON.stringify(body);
-  const r = await fetch(API + path, opts);
-  if (!r.ok) { const e = await r.json().catch(()=>({detail:r.statusText})); throw new Error(e.detail || r.statusText); }
-  return r.json();
-}
+        // Search countries
+        async function searchCountries() {
+            const query = document.getElementById('countrySearch').value;
+            try {
+                const res = await fetch(`${API_BASE}/api/search-countries`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}`},
+                    body: JSON.stringify({query})
+                });
+                const data = await res.json();
+                
+                const html = data.results.map(r => `
+                    <div class="grid-card" onclick="viewCountryDetails('${r.code}')">
+                        <h3>${r.name}</h3>
+                        <p>Click to view visa types and requirements</p>
+                    </div>
+                `).join('');
+                
+                document.getElementById('countryResults').innerHTML = html;
+            } catch (e) {
+                console.error(e);
+                alert('Error searching countries');
+            }
+        }
 
-// ── Nav ───────────────────────────────────────────────────────────────────────
-function navTo(view, el) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('view-' + view).classList.add('active');
-  if (el) el.classList.add('active');
-  const titles = { dashboard:'Dashboard', applications:'Applications', 'new-client':'Add Client', 'new-app':'New Application', detail:'Application Detail', webhooks:'n8n Webhook Log' };
-  document.getElementById('page-title').textContent = titles[view] || view;
-  if (view === 'applications') renderAppsTable('apps-table-2', ALL_APPS);
-  if (view === 'webhooks') loadWebhooks();
-}
+        // View country details
+        async function viewCountryDetails(countryCode) {
+            try {
+                const res = await fetch(`${API_BASE}/api/country/${countryCode}`, {
+                    headers: {'Authorization': `Bearer ${API_KEY}`}
+                });
+                const data = await res.json();
+                
+                let html = `<h3>${data.display_name}</h3>`;
+                for (const [type, info] of Object.entries(data.visa_types)) {
+                    html += `
+                        <div class="card" style="margin: 12px 0">
+                            <h4>${info.name}</h4>
+                            <p><strong>Duration:</strong> ${info.duration}</p>
+                            <p><strong>Processing:</strong> ${info.processing_time}</p>
+                            <p><strong>Documents:</strong></p>
+                            <ul>
+                                ${info.documents.map(d => `<li>${d}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+                
+                document.getElementById('countryDetails').innerHTML = html;
+                localStorage.setItem('selectedCountry', JSON.stringify(data));
+                openModal('countryModal');
+            } catch (e) {
+                console.error(e);
+                alert('Error loading country details');
+            }
+        }
 
-// ── Dashboard ─────────────────────────────────────────────────────────────────
-async function loadDashboard() {
-  const data = await api('/admin/dashboard');
-  ALL_APPS = data.applications;
-  const s = data.stats;
-  document.getElementById('stats-grid').innerHTML = `
-    <div class="stat blue"><span class="stat-icon">📋</span><div class="stat-num">${s.total}</div><div class="stat-label">Total Applications</div></div>
-    <div class="stat gold"><span class="stat-icon">⏳</span><div class="stat-num">${s.pending}</div><div class="stat-label">Pending Documents</div></div>
-    <div class="stat green"><span class="stat-icon">✅</span><div class="stat-num">${s.approved}</div><div class="stat-label">Approved</div></div>
-    <div class="stat red"><span class="stat-icon">⚠️</span><div class="stat-num">${s.missing_docs}</div><div class="stat-label">Docs Missing</div></div>`;
-  renderAppsTable('apps-table', ALL_APPS);
-}
+        function copyCountryDetails() {
+            const data = JSON.parse(localStorage.getItem('selectedCountry'));
+            let text = `${data.display_name}\n\n`;
+            for (const [type, info] of Object.entries(data.visa_types)) {
+                text += `${info.name}\n`;
+                text += `Duration: ${info.duration}\n`;
+                text += `Processing: ${info.processing_time}\n`;
+                text += `Documents:\n`;
+                info.documents.forEach(d => text += `  • ${d}\n`);
+                text += `\n`;
+            }
+            navigator.clipboard.writeText(text).then(() => alert('Copied to clipboard!'));
+        }
 
-function renderAppsTable(tbodyId, apps) {
-  const BADGE = { pending:'b-pending', docs_received:'b-docs', review:'b-review', submitted:'b-submitted', approved:'b-approved', rejected:'b-rejected' };
-  const LABEL = { pending:'Pending Docs', docs_received:'Docs Received', review:'Under Review', submitted:'Submitted', approved:'Approved', rejected:'Rejected' };
-  document.getElementById(tbodyId).innerHTML = apps.map(a => `
-    <tr>
-      <td><div style="display:flex;align-items:center;gap:8px">
-        <div class="avatar">${a.client_name.split(' ').map(n=>n[0]).join('')}</div>
-        <div><div style="font-weight:500">${a.client_name}</div><div style="font-size:11px;color:var(--muted)">${a.client_email}</div></div>
-      </div></td>
-      <td>${a.destination}</td>
-      <td style="text-transform:capitalize">${a.visa_type}</td>
-      <td style="color:var(--muted)">${a.created_at?.split('T')[0]||'—'}</td>
-      <td><span class="badge ${BADGE[a.status]||'b-pending'}">${LABEL[a.status]||a.status}</span></td>
-      <td><div class="prog-wrap"><div class="prog-bar"><div class="prog-fill" style="width:${a.progress}%"></div></div><span style="font-size:11px;color:var(--muted)">${a.progress}%</span></div></td>
-      <td><button class="btn btn-outline btn-sm" onclick="openDetail('${a.app_id}')">View →</button></td>
-    </tr>`).join('');
-}
+        // Create checklist
+        async function createChecklist() {
+            const documents = document.getElementById('newDocuments').value.split('\n').filter(d => d.trim());
+            const price = parseFloat(document.getElementById('newPrice').value) || 0;
+            const discount = parseFloat(document.getElementById('newDiscount').value) || 0;
+            
+            try {
+                const res = await fetch(`${API_BASE}/admin/checklist/create`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        country: document.getElementById('newCountry').value,
+                        visa_type: document.getElementById('newVisaType').value,
+                        name: document.getElementById('newChecklistName').value,
+                        documents: documents,
+                        base_price: price,
+                        discount_percentage: discount
+                    })
+                });
+                
+                if (res.ok) {
+                    alert('Checklist created!');
+                    closeModal('newChecklistModal');
+                    filterChecklists();
+                } else {
+                    alert('Error creating checklist');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Error: ' + e.message);
+            }
+        }
 
-function filterApps() {
-  const f = document.getElementById('filter-status').value;
-  renderAppsTable('apps-table-2', f ? ALL_APPS.filter(a=>a.status===f) : ALL_APPS);
-}
+        // Send message
+        async function sendMessage() {
+            const appId = document.getElementById('sendAppId').value;
+            const messageType = document.getElementById('messageType').value;
+            const channels = Array.from(document.querySelectorAll('.channel-selector input:checked')).map(el => el.value);
+            
+            if (!appId || channels.length === 0) {
+                alert('Please select app ID and channels');
+                return;
+            }
+            
+            const msgDiv = document.getElementById('messageStatus');
+            msgDiv.innerHTML = '<div class="spinner"></div> Sending...';
+            
+            try {
+                let endpoint = '';
+                let body = {app_id: appId, channels};
+                
+                if (messageType === 'checklist') {
+                    endpoint = '/admin/send-checklist';
+                } else if (messageType === 'status') {
+                    endpoint = '/admin/send-status-update';
+                    body.new_status = document.getElementById('statusSelect').value;
+                    body.note = document.getElementById('statusNote').value;
+                } else if (messageType === 'reminder') {
+                    endpoint = '/admin/send-reminder';
+                    body.missing_docs = document.getElementById('missingDocs').value.split('\n').filter(d => d.trim());
+                }
+                
+                const res = await fetch(`${API_BASE}${endpoint}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`
+                    },
+                    body: JSON.stringify(body)
+                });
+                
+                if (res.ok) {
+                    msgDiv.innerHTML = '<div class="alert alert-success">✓ Message sent successfully!</div>';
+                } else {
+                    msgDiv.innerHTML = '<div class="alert">Error sending message</div>';
+                }
+            } catch (e) {
+                msgDiv.innerHTML = '<div class="alert">Error: ' + e.message + '</div>';
+            }
+        }
 
-// ── Detail ────────────────────────────────────────────────────────────────────
-async function openDetail(appId) {
-  CURRENT_APP_ID = appId;
-  const data = await api(`/admin/application/${appId}`);
-  const a = data.application;
-  const BADGE = { pending:'b-pending', docs_received:'b-docs', review:'b-review', submitted:'b-submitted', approved:'b-approved', rejected:'b-rejected' };
-  const LABEL = { pending:'Pending Docs', docs_received:'Docs Received', review:'Under Review', submitted:'Submitted', approved:'Approved', rejected:'Rejected' };
-  document.getElementById('detail-info-card').innerHTML = `
-    <div class="card-header"><div class="card-title">📄 ${a.app_id}</div><span class="badge ${BADGE[a.status]}">${LABEL[a.status]||a.status}</span></div>
-    ${infoRow('Applicant', a.client_name)}
-    ${infoRow('Email', a.client_email)}
-    ${infoRow('Phone', a.client_phone||'—')}
-    ${infoRow('Destination', a.destination)}
-    ${infoRow('Visa Type', a.visa_type)}
-    ${infoRow('Travel Date', a.travel_date||'—')}
-    ${infoRow('Applied', a.created_at?.split('T')[0]||'—')}`;
-  document.getElementById('status-sel').value = a.status;
-  const DOC_ICONS = { passport:'🪪', photo:'📷', bank_statement:'🏦', hotel_booking:'🏨', flight_ticket:'✈️', travel_insurance:'🛡️', invitation_letter:'📬', company_letter:'🏢', admission_letter:'📚', accommodation_proof:'🏠', onward_ticket:'🎫', other:'📄' };
-  document.getElementById('detail-docs').innerHTML = data.documents.map(d => `
-    <div class="doc-card ${d.status}" title="${d.status}">
-      <div class="doc-icon">${DOC_ICONS[d.doc_type]||'📄'}</div>
-      <div class="doc-name">${d.doc_type.replace(/_/g,' ')}</div>
-      <div class="doc-status">${d.status}</div>
-    </div>`).join('');
-  document.getElementById('detail-log').innerHTML = data.activity.map((l,i,arr) => `
-    <li class="tl">
-      <div class="tl-dot ${i===0?'tl-now':'tl-done'}">${i===0?'●':'✓'}</div>
-      <div><div class="tl-text">${l.action}${l.detail?' — '+l.detail:''}</div>
-      <div class="tl-meta">${l.actor} · ${l.created_at?.split('T')[0]||''}</div></div>
-    </li>`).join('');
-  navTo('detail', null);
-}
+        function updateMessageTemplate() {
+            const type = document.getElementById('messageType').value;
+            let html = '';
+            
+            if (type === 'status') {
+                html = `
+                    <div class="form-group">
+                        <label>New Status</label>
+                        <select id="statusSelect">
+                            <option>pending</option>
+                            <option>docs_received</option>
+                            <option>review</option>
+                            <option>submitted</option>
+                            <option>approved</option>
+                            <option>rejected</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Additional Note</label>
+                        <textarea id="statusNote" placeholder="Optional message to client..."></textarea>
+                    </div>
+                `;
+            } else if (type === 'reminder') {
+                html = `
+                    <div class="form-group">
+                        <label>Missing Documents (one per line)</label>
+                        <textarea id="missingDocs" placeholder="Passport&#10;Bank Statement&#10;..."></textarea>
+                    </div>
+                `;
+            }
+            
+            document.getElementById('messageOptions').innerHTML = html;
+        }
 
-function infoRow(k, v) {
-  return `<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="color:var(--muted)">${k}</span><span style="font-weight:500">${v}</span></div>`;
-}
+        // Initialize
+        updateMessageTemplate();
+        searchCountries();
 
-async function updateStatus() {
-  const status = document.getElementById('status-sel').value;
-  const note   = document.getElementById('status-note').value;
-  await api(`/admin/application/${CURRENT_APP_ID}/status`, 'POST', { status, note });
-  toast('Status updated — client notified via n8n ⚡');
-  document.getElementById('status-note').value = '';
-  openDetail(CURRENT_APP_ID);
-}
+        // Load applications on tab switch
+        document.addEventListener('click', (e) => {
+            if (e.target.textContent.includes('Applications')) {
+                loadApplications();
+            }
+        });
 
-// ── Create client ─────────────────────────────────────────────────────────────
-async function createClient() {
-  const name  = document.getElementById('nc-name').value;
-  const email = document.getElementById('nc-email').value;
-  const phone = document.getElementById('nc-phone').value;
-  const pass  = document.getElementById('nc-pass').value;
-  try {
-    await api('/admin/clients', 'POST', { name, email, phone, password: pass });
-    document.getElementById('nc-result').innerHTML = `<span style="color:var(--green)">✓ Client created — they can now login at /client</span>`;
-    toast('Client account created');
-  } catch(e) {
-    document.getElementById('nc-result').innerHTML = `<span style="color:var(--red)">✗ ${e.message}</span>`;
-  }
-}
-
-// ── Create application ────────────────────────────────────────────────────────
-async function createApplication() {
-  const form = new FormData();
-  form.append('client_email', document.getElementById('na-email').value);
-  form.append('destination',  document.getElementById('na-dest').value);
-  form.append('visa_type',    document.getElementById('na-type').value);
-  form.append('travel_date',  document.getElementById('na-date').value);
-  try {
-    const r = await api('/admin/application', 'POST', form, true);
-    document.getElementById('na-result').innerHTML = `<span style="color:var(--green)">✓ Application created: ${r.app_id} — checklist sent via n8n</span>`;
-    toast(`Application ${r.app_id} created`);
-    loadDashboard();
-  } catch(e) {
-    document.getElementById('na-result').innerHTML = `<span style="color:var(--red)">✗ ${e.message}</span>`;
-  }
-}
-
-// ── Webhook log ───────────────────────────────────────────────────────────────
-async function loadWebhooks() {
-  const rows = await api('/admin/webhook-log');
-  const COLORS = { sent:'var(--green)', failed:'var(--red)', pending:'var(--gold)', disabled:'var(--muted)' };
-  document.getElementById('wh-table').innerHTML = rows.length === 0
-    ? '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">No webhook events yet</td></tr>'
-    : rows.map(r => `
-      <tr>
-        <td style="color:var(--muted);font-size:12px">${r.created_at?.split('T')[0]||''}</td>
-        <td><code style="font-size:12px">${r.event}</code></td>
-        <td><span style="color:${COLORS[r.status]||'var(--muted)'};font-weight:500">${r.status}</span></td>
-        <td style="font-size:11px;color:var(--muted);max-width:240px;overflow:hidden;text-overflow:ellipsis">${(r.payload||'').substring(0,80)}...</td>
-      </tr>`).join('');
-}
-
-// ── Toast ─────────────────────────────────────────────────────────────────────
-function toast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 3500);
-}
-</script>
+        async function loadApplications() {
+            try {
+                const res = await fetch(`${API_BASE}/admin/dashboard`, {
+                    headers: {'Authorization': `Bearer ${API_KEY}`}
+                });
+                const data = await res.json();
+                
+                const html = data.applications.map(app => `
+                    <tr>
+                        <td>${app.app_id}</td>
+                        <td>${app.client_name}</td>
+                        <td>${app.destination}</td>
+                        <td><span class="badge badge-primary">${app.status}</span></td>
+                        <td>${app.progress}%</td>
+                        <td>
+                            <button class="btn btn-small btn-secondary" onclick="editApplication('${app.app_id}')">Edit</button>
+                        </td>
+                    </tr>
+                `).join('');
+                
+                document.getElementById('applicationsTable').innerHTML = html;
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    </script>
 </body>
 </html>
