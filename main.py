@@ -36,7 +36,7 @@ STATUS_PROGRESS = {
     "submitted": 75, "approved": 100, "rejected": 0,
 }
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
+# --- Schemas ───────────────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -90,7 +90,7 @@ class SendStatusRequest(BaseModel):
 class SendReminderRequest(BaseModel):
     app_id: str; missing_docs: list; channels: list = ["whatsapp", "email"]
 
-# ── Health & Frontend ─────────────────────────────────────────────────────────
+# --- Health & Frontend ─────────────────────────────────────────────────────────
 @app.get("/")
 def root(): return {"status": "online", "service": "MKOV Visa System v2.0.0"}
 
@@ -107,14 +107,14 @@ def serve_client():
     path = os.path.join(STATIC_DIR, "client.html")
     return HTMLResponse(open(path).read()) if os.path.exists(path) else HTMLResponse("Not found", 404)
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
+# --- Auth ──────────────────────────────────────────────────────────────────────
 @app.post("/auth/admin/login")
 def login_admin(data: LoginRequest): return admin_login(data.email, data.password)
 
 @app.post("/auth/client/login")
 def login_client(data: LoginRequest): return client_login(data.email, data.password)
 
-# ── Visa Requirements (Public) ────────────────────────────────────────────────
+# --- Visa Requirements (Public) ────────────────────────────────────────────────
 @app.get("/api/countries")
 def get_countries():
     from visa_requirements import get_country_list
@@ -140,7 +140,7 @@ def search_countries_api(data: CountrySearch):
     from visa_requirements import search_countries
     return {"results": search_countries(data.query)}
 
-# ── Admin Dashboard ───────────────────────────────────────────────────────────
+# --- Admin Dashboard ───────────────────────────────────────────────────────────
 @app.get("/admin/dashboard")
 def admin_dashboard(admin=Depends(require_admin)):
     conn = get_db()
@@ -252,7 +252,7 @@ def admin_verify_doc(app_id: str, data: UpdateDocStatusRequest, admin=Depends(re
     conn.commit(); conn.close()
     return {"status": "updated"}
 
-# ── Checklists & Pricing ──────────────────────────────────────────────────────
+# --- Checklists & Pricing ──────────────────────────────────────────────────────
 @app.post("/admin/checklist/create")
 def create_checklist(data: CustomChecklistData, admin=Depends(require_admin)):
     final_price = data.base_price * (1 - data.discount_percentage / 100)
@@ -319,7 +319,7 @@ def get_client_discounts(client_id: int, admin=Depends(require_admin)):
     conn.close()
     return {"discounts": [dict(r) for r in rows]}
 
-# ── Multi-Channel Send ────────────────────────────────────────────────────────
+# --- Multi-Channel Send ────────────────────────────────────────────────────────
 @app.post("/admin/send-checklist")
 def admin_send_checklist(data: SendChecklistRequest, admin=Depends(require_admin)):
     conn = get_db()
@@ -384,7 +384,7 @@ def admin_webhook_log(admin=Depends(require_admin)):
     conn.close()
     return [dict(r) for r in rows]
 
-# ── Client Routes ─────────────────────────────────────────────────────────────
+# --- Client Routes ─────────────────────────────────────────────────────────────
 @app.get("/client/dashboard")
 def client_dashboard(client=Depends(require_client)):
     conn = get_db()
@@ -438,7 +438,7 @@ Status:          {app['status'].title()}
 REQUIRED DOCUMENTS:
 """
     for i, doc in enumerate(documents, 1):
-        text += f"  {i}. ☐ {doc}\n"
+        text += f"  {i}. [ ] {doc}\n"
     if final_price:
         text += f"\nSERVICE CHARGE: ₹{final_price:.2f}\n"
     text += f"\nUpload at: https://arya-v1-0-0.onrender.com/client\nHelp: +91-8010700700\n"
