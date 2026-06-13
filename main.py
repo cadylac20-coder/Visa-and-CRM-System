@@ -57,6 +57,8 @@ class UpdateStatusRequest(BaseModel):
 
 class NewClientRequest(BaseModel):
     name: str; email: str; phone: Optional[str] = ""; password: str
+    passport_b64: Optional[str] = None
+    passport_filename: Optional[str] = None
 
 class UpdateDocStatusRequest(BaseModel):
     doc_id: int; status: str; notes: Optional[str] = ""
@@ -204,12 +206,58 @@ def admin_update_status(app_id: str, data: UpdateStatusRequest, admin=Depends(re
 def admin_create_client(data: NewClientRequest, admin=Depends(require_admin)):
     conn = get_db()
     try:
-        conn.execute("INSERT INTO clients (name, email, phone, password) VALUES (?,?,?,?)",
-                     (data.name, data.email, data.phone, hash_password(data.password)))
+        conn.execute(
+            "INSERT INTO clients (name, email, phone, password, passport_b64, passport_filename) VALUES (?,?,?,?,?,?)",
+            (data.name, data.email, data.phone, hash_password(data.password),
+             data.passport_b64, data.passport_filename)
+        )
         conn.commit(); conn.close()
         return {"status": "created"}
     except Exception as e:
         conn.close(); raise HTTPException(400, str(e))
+
+@app.get("/admin/client/{client_id}/passport")
+def admin_get_passport(client_id: int, admin=Depends(require_admin)):
+    """Return passport as base64 so admin can view/download it."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT name, passport_b64, passport_filename FROM clients WHERE id=?", (client_id,)
+    ).fetchone()
+    conn.close()
+    if not row or not row["passport_b64"]:
+        raise HTTPException(404, "No passport on file for this client")
+    return {
+        "client_name":       row["name"],
+        "passport_b64":      row["passport_b64"],
+        "passport_filename": row["passport_filename"] or "passport.jpg",
+    }
+
+@app.post("/admin/application/{app_id}/team-note")
+def admin_add_team_note(app_id: str, data: dict, admin=Depends(require_admin)):
+    """Save an internal team note — not visible to clients."""
+    note = data.get("note", "").strip()
+    if not note:
+        raise HTTPException(400, "Note cannot be empty")
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO team_notes (app_id, author, note) VALUES (?,?,?)",
+        (app_id, admin["name"], note)
+    )
+    conn.execute(
+        "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+        (app_id, f"staff:{admin['name']}", "Team note added", note[:80])
+    )
+    conn.commit(); conn.close()
+    return {"status": "saved"}
+
+@app.get("/admin/application/{app_id}/team-notes")
+def admin_get_team_notes(app_id: str, admin=Depends(require_admin)):
+    conn = get_db()
+    notes = conn.execute(
+        "SELECT * FROM team_notes WHERE app_id=? ORDER BY created_at DESC", (app_id,)
+    ).fetchall()
+    conn.close()
+    return {"notes": [dict(n) for n in notes]}
 
 @app.post("/admin/application")
 def admin_create_application(data: NewApplicationRequest, admin=Depends(require_admin)):
