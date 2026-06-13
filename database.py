@@ -36,12 +36,14 @@ def init_db():
     # ── Clients ───────────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS clients (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            name          TEXT NOT NULL,
-            email         TEXT UNIQUE NOT NULL,
-            phone         TEXT,
-            password      TEXT NOT NULL,
-            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            name             TEXT NOT NULL,
+            email            TEXT UNIQUE NOT NULL,
+            phone            TEXT,
+            password         TEXT NOT NULL,
+            passport_b64     TEXT,
+            passport_filename TEXT,
+            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -171,6 +173,16 @@ def init_db():
     """)
 
     # ── Webhook log ───────────────────────────────────────────────────────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS team_notes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id     TEXT NOT NULL,
+            author     TEXT NOT NULL,
+            note       TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     c.execute("""
         CREATE TABLE IF NOT EXISTS webhook_log (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
