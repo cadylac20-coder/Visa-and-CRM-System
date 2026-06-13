@@ -1,875 +1,1630 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MKOV Visa Admin Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        :root {
-            --navy: #0d3055;
-            --teal: #0ab5a4;
-            --off-white: #f6f8fb;
-            --border: #e0e7f1;
-            --text-main: #1a2b3c;
-            --text-muted: #6b7f8f;
-        }
-        
-        body {
-            font-family: 'DM Sans', sans-serif;
-            background: var(--off-white);
-            color: var(--text-main);
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MKOV Visa CRM — Internal</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--surface3:#2a2f45;
+  --border:#2e3350;--border2:#3d4466;
+  --navy:#1e3a5f;--teal:#00c6b8;--teal-dim:#00857a;
+  --gold:#f5b731;--red:#e05454;--green:#3ecf8e;--blue:#4f8ef7;
+  --text:#e8eaf0;--text2:#9aa3c2;--text3:#5c6485;
+  --font:'Inter',sans-serif;--mono:'JetBrains Mono',monospace;
+  --r:8px;--r2:12px;--r3:16px;
+  --shadow:0 4px 24px rgba(0,0,0,0.4);
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5}
 
-        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+/* ── Layout ── */
+.app{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:16px;flex-shrink:0}
+.content{flex:1;overflow-y:auto;padding:24px}
 
-        header {
-            background: linear-gradient(135deg, var(--navy), #1a5a8a);
-            color: white;
-            padding: 24px;
-            border-radius: 12px;
-            margin-bottom: 24px;
-        }
+/* ── Sidebar ── */
+.logo{padding:20px 16px;border-bottom:1px solid var(--border)}
+.logo-mark{font-size:18px;font-weight:700;color:var(--teal);letter-spacing:-0.5px}
+.logo-sub{font-size:11px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:1px}
+.nav{padding:12px 8px;flex:1}
+.nav-section{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1.2px;padding:12px 8px 6px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r);cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .15s;margin-bottom:2px;border:none;background:none;width:100%;text-align:left}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:rgba(0,198,184,0.12);color:var(--teal)}
+.nav-item svg{width:16px;height:16px;flex-shrink:0;opacity:0.8}
+.nav-item.active svg{opacity:1}
+.badge{margin-left:auto;background:var(--teal);color:#000;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px}
+.sidebar-footer{padding:12px;border-top:1px solid var(--border)}
+.user-chip{display:flex;align-items:center;gap:10px;padding:8px;border-radius:var(--r);background:var(--surface2)}
+.avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--navy),var(--teal));display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;flex-shrink:0}
+.user-name{font-size:12px;font-weight:500}
+.user-role{font-size:10px;color:var(--text3)}
 
-        header h1 { font-family: 'Cormorant Garamond', serif; font-size: 28px; }
-        header p { opacity: 0.8; margin-top: 4px; }
+/* ── Topbar ── */
+.page-title{font-size:16px;font-weight:600}
+.topbar-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.search-wrap{position:relative}
+.search-wrap input{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 12px 7px 32px;color:var(--text);font-size:13px;width:240px;outline:none;transition:border-color .15s}
+.search-wrap input:focus{border-color:var(--teal)}
+.search-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);width:14px;height:14px}
 
-        .tabs {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 24px;
-            border-bottom: 2px solid var(--border);
-        }
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all .15s;font-family:var(--font)}
+.btn-primary{background:var(--teal);color:#000}
+.btn-primary:hover{background:#00e0cf}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--surface2);color:var(--text);border-color:var(--border2)}
+.btn-danger{background:rgba(224,84,84,0.15);color:var(--red);border:1px solid rgba(224,84,84,0.3)}
+.btn-danger:hover{background:rgba(224,84,84,0.25)}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-icon{padding:7px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;color:var(--text2);display:inline-flex;align-items:center;justify-content:center;transition:all .15s}
+.btn-icon:hover{background:var(--surface3);color:var(--text)}
+.btn svg{width:14px;height:14px}
 
-        .tab-btn {
-            padding: 12px 20px;
-            border: none;
-            background: none;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--text-muted);
-            border-bottom: 3px solid transparent;
-            transition: all 0.2s;
-        }
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px}
+.card-title{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:16px}
 
-        .tab-btn.active {
-            color: var(--navy);
-            border-bottom-color: var(--navy);
-        }
+/* ── Stats row ── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:16px}
+.stat-value{font-size:28px;font-weight:700;letter-spacing:-1px;line-height:1}
+.stat-label{font-size:12px;color:var(--text3);margin-top:4px;font-weight:500}
+.stat-delta{font-size:11px;margin-top:8px}
+.stat-delta.up{color:var(--green)}
+.stat-delta.down{color:var(--red)}
 
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
+/* ── Table ── */
+.table-wrap{border:1px solid var(--border);border-radius:var(--r2);overflow:hidden}
+table{width:100%;border-collapse:collapse}
+thead{background:var(--surface2)}
+th{padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:11px 14px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr{transition:background .1s}
+tbody tr:hover{background:var(--surface2)}
+.clickable{cursor:pointer}
 
-        .card {
-            background: white;
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-        }
+/* ── Status badges ── */
+.status{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.status::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.status-pending{background:rgba(245,183,49,0.12);color:var(--gold)}.status-pending::before{background:var(--gold)}
+.status-docs_received{background:rgba(79,142,247,0.12);color:var(--blue)}.status-docs_received::before{background:var(--blue)}
+.status-review{background:rgba(79,142,247,0.12);color:var(--blue)}.status-review::before{background:var(--blue)}
+.status-submitted{background:rgba(62,207,142,0.12);color:var(--green)}.status-submitted::before{background:var(--green)}
+.status-approved{background:rgba(0,198,184,0.12);color:var(--teal)}.status-approved::before{background:var(--teal)}
+.status-rejected{background:rgba(224,84,84,0.12);color:var(--red)}.status-rejected::before{background:var(--red)}
 
-        .card h2 {
-            font-family: 'Cormorant Garamond', serif;
-            font-size: 20px;
-            margin-bottom: 16px;
-            color: var(--navy);
-        }
+/* ── Progress bar ── */
+.progress-wrap{display:flex;align-items:center;gap:8px}
+.progress-bar{flex:1;height:4px;background:var(--surface3);border-radius:2px;overflow:hidden;min-width:60px}
+.progress-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--teal),var(--blue));transition:width .3s}
+.progress-pct{font-size:11px;color:var(--text3);font-family:var(--mono);min-width:28px}
 
-        .search-box {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 20px;
-        }
+/* ── Form ── */
+.form-grid{display:grid;gap:14px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-group label{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:6px}
+.form-group input,.form-group select,.form-group textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-size:13px;font-family:var(--font);outline:none;transition:border-color .15s}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--teal)}
+.form-group textarea{min-height:80px;resize:vertical}
+.form-group select option{background:var(--surface2)}
+.file-drop{border:2px dashed var(--border2);border-radius:var(--r2);padding:24px;text-align:center;cursor:pointer;transition:all .15s;background:var(--surface2)}
+.file-drop:hover,.file-drop.dragover{border-color:var(--teal);background:rgba(0,198,184,0.06)}
+.file-drop p{font-size:13px;color:var(--text2)}
+.file-drop span{font-size:11px;color:var(--text3);margin-top:4px;display:block}
 
-        .search-box input {
-            flex: 1;
-            padding: 10px 14px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 14px;
-        }
+/* ── Tabs ── */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px}
+.tab{padding:10px 16px;font-size:13px;font-weight:500;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;background:none;border-top:none;border-left:none;border-right:none;font-family:var(--font)}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--teal);border-bottom-color:var(--teal)}
 
-        .btn {
-            padding: 10px 18px;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
+/* ── Modal ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--r3);width:90%;max-width:580px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow)}
+.modal-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--surface);z-index:1}
+.modal-title{font-size:16px;font-weight:600}
+.modal-close{background:none;border:none;color:var(--text3);cursor:pointer;font-size:20px;line-height:1;padding:4px;border-radius:4px}
+.modal-close:hover{color:var(--text);background:var(--surface2)}
+.modal-body{padding:24px}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
 
-        .btn-primary {
-            background: var(--navy);
-            color: white;
-        }
+/* ── Views ── */
+.view{display:none}
+.view.active{display:block}
 
-        .btn-primary:hover {
-            background: #1a5a8a;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(13, 48, 85, 0.2);
-        }
+/* ── Page sections ── */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.page-header h2{font-size:20px;font-weight:600}
+.page-header p{font-size:13px;color:var(--text3);margin-top:2px}
 
-        .btn-secondary {
-            background: var(--off-white);
-            color: var(--navy);
-            border: 1px solid var(--border);
-        }
+/* ── Checklist editor ── */
+.checklist-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px}
+.checklist-item input[type=text]{flex:1;background:transparent;border:none;color:var(--text);font-size:13px;outline:none}
+.checklist-item input[type=text]::placeholder{color:var(--text3)}
+.drag-handle{color:var(--text3);cursor:grab;font-size:16px;line-height:1}
+.remove-item{background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px;line-height:1;padding:2px;border-radius:4px}
+.remove-item:hover{color:var(--red)}
 
-        .btn-secondary:hover {
-            background: white;
-            border-color: var(--navy);
-        }
+/* ── Document viewer ── */
+.doc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+.doc-card{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r2);padding:14px;text-align:center;cursor:pointer;transition:all .15s;position:relative}
+.doc-card:hover{border-color:var(--teal)}
+.doc-card.verified{border-color:rgba(62,207,142,0.4);background:rgba(62,207,142,0.05)}
+.doc-card.missing{border-color:rgba(224,84,84,0.3);background:rgba(224,84,84,0.04)}
+.doc-icon{font-size:28px;margin-bottom:8px;display:block}
+.doc-name{font-size:11px;font-weight:500;color:var(--text2)}
+.doc-status{font-size:10px;color:var(--text3);margin-top:4px}
+.doc-badge{position:absolute;top:8px;right:8px;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px}
+.doc-badge.verified{background:var(--green);color:#000}
+.doc-badge.missing{background:var(--red);color:white}
+.doc-badge.uploaded{background:var(--blue);color:white}
 
-        .btn-small {
-            padding: 6px 12px;
-            font-size: 12px;
-        }
+/* ── Activity log ── */
+.activity-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.activity-item:last-child{border-bottom:none}
+.activity-dot{width:8px;height:8px;border-radius:50%;background:var(--teal);flex-shrink:0;margin-top:5px}
+.activity-content{flex:1}
+.activity-action{font-size:13px;font-weight:500}
+.activity-detail{font-size:12px;color:var(--text3);margin-top:2px}
+.activity-time{font-size:11px;color:var(--text3);font-family:var(--mono);flex-shrink:0}
 
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 16px;
-            margin-bottom: 20px;
-        }
+/* ── VFS page ── */
+.vfs-split{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.parsed-text{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:14px;font-size:12px;font-family:var(--mono);color:var(--text2);min-height:200px;max-height:300px;overflow-y:auto;white-space:pre-wrap;line-height:1.6}
 
-        .grid-card {
-            background: white;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 16px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
+/* ── Packages ── */
+.packages-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.package-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;transition:all .15s}
+.package-card:hover{border-color:var(--border2);box-shadow:var(--shadow)}
+.package-header{background:linear-gradient(135deg,var(--navy),#2d4a7a);padding:16px;position:relative}
+.package-flag{font-size:28px;margin-bottom:4px}
+.package-name{font-size:15px;font-weight:700;color:white}
+.package-type{font-size:11px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:.5px}
+.package-body{padding:16px}
+.package-price{font-size:22px;font-weight:700;color:var(--teal);margin-bottom:12px}
+.package-price span{font-size:13px;color:var(--text3);font-weight:400}
+.package-docs{list-style:none;margin-bottom:14px}
+.package-docs li{font-size:12px;color:var(--text2);padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
+.package-docs li::before{content:'•';color:var(--teal);font-size:16px;line-height:1}
+.package-actions{display:flex;gap:8px}
 
-        .grid-card:hover {
-            border-color: var(--navy);
-            box-shadow: 0 4px 12px rgba(13, 48, 85, 0.1);
-        }
+/* ── Send message ── */
+.channel-toggle{display:flex;gap:8px;margin:12px 0}
+.channel-btn{padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text3);transition:all .15s;font-family:var(--font)}
+.channel-btn.active.wa{border-color:#25d366;color:#25d366;background:rgba(37,211,102,0.1)}
+.channel-btn.active.sms{border-color:var(--blue);color:var(--blue);background:rgba(79,142,247,0.1)}
+.channel-btn.active.email{border-color:var(--gold);color:var(--gold);background:rgba(245,183,49,0.1)}
 
-        .grid-card h3 {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--navy);
-            margin-bottom: 8px;
-        }
+/* ── Toast ── */
+#toast{position:fixed;bottom:24px;right:24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:12px 18px;font-size:13px;box-shadow:var(--shadow);z-index:200;transform:translateY(80px);opacity:0;transition:all .3s;display:flex;align-items:center;gap:10px;min-width:260px}
+#toast.show{transform:translateY(0);opacity:1}
+#toast.success{border-color:var(--green);background:rgba(62,207,142,0.1)}
+#toast.error{border-color:var(--red);background:rgba(224,84,84,0.1)}
 
-        .grid-card p {
-            font-size: 13px;
-            color: var(--text-muted);
-            line-height: 1.5;
-        }
+/* ── Login ── */
+#login-screen{position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;align-items:center;justify-content:center}
+.login-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--r3);padding:40px;width:380px;box-shadow:var(--shadow)}
+.login-logo{font-size:24px;font-weight:700;color:var(--teal);margin-bottom:4px}
+.login-sub{font-size:13px;color:var(--text3);margin-bottom:28px}
+.login-error{background:rgba(224,84,84,0.1);border:1px solid rgba(224,84,84,0.3);color:var(--red);padding:10px 14px;border-radius:var(--r);font-size:13px;margin-bottom:16px;display:none}
 
-        .form-group {
-            margin-bottom: 16px;
-        }
+/* ── Comm log ── */
+.comm-item{display:flex;align-items:flex-start;gap:12px;padding:12px;background:var(--surface2);border-radius:var(--r);margin-bottom:8px}
+.comm-channel{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.comm-channel.wa{background:rgba(37,211,102,0.15)}
+.comm-channel.email{background:rgba(245,183,49,0.15)}
+.comm-channel.sms{background:rgba(79,142,247,0.15)}
+.comm-body{flex:1}
+.comm-title{font-size:13px;font-weight:500}
+.comm-time{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.comm-status{font-size:11px;padding:2px 8px;border-radius:10px;margin-left:auto;flex-shrink:0}
+.comm-status.sent{background:rgba(62,207,142,0.12);color:var(--green)}
+.comm-status.failed{background:rgba(224,84,84,0.12);color:var(--red)}
 
-        .form-group label {
-            display: block;
-            font-size: 13px;
-            font-weight: 500;
-            color: var(--navy);
-            margin-bottom: 6px;
-        }
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text3)}
 
-        .form-group input,
-        .form-group select,
-        .form-group textarea {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 14px;
-            font-family: 'DM Sans', sans-serif;
-        }
-
-        .form-group textarea {
-            min-height: 100px;
-            resize: vertical;
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background: white;
-            border-radius: 12px;
-            padding: 24px;
-            max-width: 600px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-
-        .modal-header {
-            font-family: 'Cormorant Garamond', serif;
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 20px;
-            color: var(--navy);
-        }
-
-        .close-btn {
-            float: right;
-            font-size: 24px;
-            cursor: pointer;
-            color: var(--text-muted);
-            background: none;
-            border: none;
-        }
-
-        .close-btn:hover {
-            color: var(--navy);
-        }
-
-        .alert {
-            padding: 12px 16px;
-            border-radius: 8px;
-            margin-bottom: 16px;
-            font-size: 13px;
-        }
-
-        .alert-info {
-            background: #e7f3ff;
-            color: #0066cc;
-            border-left: 4px solid #0066cc;
-        }
-
-        .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border-left: 4px solid #155724;
-        }
-
-        .checklist-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 12px;
-            background: var(--off-white);
-            border-radius: 8px;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-
-        .checklist-item input[type="checkbox"] {
-            cursor: pointer;
-        }
-
-        .channel-selector {
-            display: flex;
-            gap: 10px;
-            margin: 16px 0;
-        }
-
-        .channel-selector label {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            cursor: pointer;
-            font-weight: 400;
-            margin-bottom: 0;
-        }
-
-        .channel-selector input[type="checkbox"] {
-            cursor: pointer;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-        }
-
-        table th {
-            background: var(--off-white);
-            padding: 12px;
-            text-align: left;
-            font-weight: 600;
-            color: var(--navy);
-            border-bottom: 2px solid var(--border);
-        }
-
-        table td {
-            padding: 12px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        table tr:hover {
-            background: var(--off-white);
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .badge-primary {
-            background: #dde5f4;
-            color: var(--navy);
-        }
-
-        .badge-success {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .badge-warning {
-            background: #fff3cd;
-            color: #856404;
-        }
-
-        .price-display {
-            font-size: 20px;
-            font-weight: 600;
-            color: var(--teal);
-            margin: 12px 0;
-        }
-
-        .copy-button {
-            display: inline-block;
-            padding: 8px 12px;
-            background: #f0f0f0;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 12px;
-            transition: all 0.2s;
-            margin: 8px 0;
-        }
-
-        .copy-button:hover {
-            background: var(--navy);
-            color: white;
-            border-color: var(--navy);
-        }
-
-        .spinner {
-            border: 3px solid var(--border);
-            border-top: 3px solid var(--navy);
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-            display: inline-block;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
+/* ── Responsive ── */
+@media(max-width:768px){
+  .sidebar{display:none}
+  .vfs-split{grid-template-columns:1fr}
+  .form-row{grid-template-columns:1fr}
+}
+</style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>MKOV Visa System — Admin Dashboard</h1>
-            <p>Manage visa applications, requirements, checklists, and client communications</p>
-        </header>
 
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('overview')">📊 Overview</button>
-            <button class="tab-btn" onclick="switchTab('countries')">🌍 Visa Requirements</button>
-            <button class="tab-btn" onclick="switchTab('checklists')">📋 Checklists</button>
-            <button class="tab-btn" onclick="switchTab('applications')">✈️ Applications</button>
-            <button class="tab-btn" onclick="switchTab('send-message')">💬 Send Message</button>
-            <button class="tab-btn" onclick="switchTab('discounts')">🏷️ Discounts</button>
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">MKOV Visa CRM</div>
+    <div class="login-sub">Internal staff access only</div>
+    <div id="login-error" class="login-error">Invalid credentials</div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="admin@uniglobemkov.in" value="admin@uniglobemkov.in">
+    </div>
+    <div class="form-group" style="margin-bottom:20px">
+      <label>Password</label>
+      <input type="password" id="login-password" placeholder="Password" value="admin123" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">Sign In</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="app" id="app" style="display:none">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-mark">MKOV CRM</div>
+      <div class="logo-sub">Visa Automation</div>
+    </div>
+    <nav class="nav">
+      <div class="nav-section">Main</div>
+      <button class="nav-item active" onclick="nav('dashboard')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </button>
+      <button class="nav-item" onclick="nav('applications')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+        Applications
+        <span class="badge" id="nav-pending-count">0</span>
+      </button>
+      <button class="nav-item" onclick="nav('clients')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Clients
+      </button>
+      <div class="nav-section">Tools</div>
+      <button class="nav-item" onclick="nav('vfs')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        VFS Checklists
+      </button>
+      <button class="nav-item" onclick="nav('packages')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+        Packages
+      </button>
+      <button class="nav-item" onclick="nav('messages')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Send Message
+      </button>
+      <button class="nav-item" onclick="nav('export')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export CRM
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-chip">
+        <div class="avatar" id="user-avatar">A</div>
+        <div>
+          <div class="user-name" id="user-name-display">Admin</div>
+          <div class="user-role">Staff</div>
         </div>
+      </div>
+    </div>
+  </aside>
 
-        <!-- OVERVIEW TAB -->
-        <div id="overview" class="tab-content active">
-            <div class="card">
-                <h2>Dashboard Stats</h2>
-                <p style="color: var(--text-muted);">Total applications, pending reviews, approved visas, and recent activities.</p>
-                <!-- Will be populated by API call -->
-            </div>
+  <!-- Main -->
+  <div class="main">
+    <div class="topbar">
+      <span class="page-title" id="page-title">Dashboard</span>
+      <div class="topbar-actions">
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" placeholder="Search applications, clients..." id="global-search" oninput="globalSearch(this.value)">
         </div>
-
-        <!-- COUNTRIES & VISA REQUIREMENTS TAB -->
-        <div id="countries" class="tab-content">
-            <div class="card">
-                <h2>Visa Requirements by Country</h2>
-                <div class="search-box">
-                    <input type="text" id="countrySearch" placeholder="Search countries (USA, Canada, Dubai...)">
-                    <button class="btn btn-primary" onclick="searchCountries()">Search</button>
-                </div>
-                
-                <div id="countryResults" class="grid"></div>
-            </div>
-
-            <!-- Country Details Modal -->
-            <div id="countryModal" class="modal">
-                <div class="modal-content">
-                    <button class="close-btn" onclick="closeModal('countryModal')">&times;</button>
-                    <div class="modal-header">Country Visa Details</div>
-                    <div id="countryDetails"></div>
-                    <div style="margin-top: 20px">
-                        <button class="btn btn-primary" onclick="copyCountryDetails()">📋 Copy to Clipboard</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- CHECKLISTS TAB -->
-        <div id="checklists" class="tab-content">
-            <div class="card">
-                <h2>Custom Visa Checklists</h2>
-                <button class="btn btn-primary" onclick="openModal('newChecklistModal')">+ Create New Checklist</button>
-                
-                <div style="margin-top: 20px">
-                    <div class="search-box">
-                        <input type="text" id="checklistCountry" placeholder="Filter by country...">
-                        <button class="btn btn-secondary" onclick="filterChecklists()">Filter</button>
-                    </div>
-                    
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Country</th>
-                                <th>Visa Type</th>
-                                <th>Name</th>
-                                <th>Price</th>
-                                <th>Discount</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="checklistTable">
-                            <!-- Populated by API -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- New Checklist Modal -->
-            <div id="newChecklistModal" class="modal">
-                <div class="modal-content">
-                    <button class="close-btn" onclick="closeModal('newChecklistModal')">&times;</button>
-                    <div class="modal-header">Create Custom Checklist</div>
-                    
-                    <div class="form-group">
-                        <label>Country</label>
-                        <input type="text" id="newCountry" placeholder="e.g., USA">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Visa Type</label>
-                        <select id="newVisaType">
-                            <option>tourist</option>
-                            <option>business</option>
-                            <option>student</option>
-                            <option>work</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Checklist Name</label>
-                        <input type="text" id="newChecklistName" placeholder="e.g., USA Tourist Standard">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Documents (one per line)</label>
-                        <textarea id="newDocuments" placeholder="Passport&#10;Photo&#10;Bank Statements&#10;..."></textarea>
-                    </div>
-                    
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px">
-                        <div class="form-group">
-                            <label>Base Price (₹)</label>
-                            <input type="number" id="newPrice" placeholder="5000">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Discount (%)</label>
-                            <input type="number" id="newDiscount" placeholder="0" min="0" max="100">
-                        </div>
-                    </div>
-                    
-                    <div style="margin-top: 20px">
-                        <button class="btn btn-primary" onclick="createChecklist()">Create Checklist</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- APPLICATIONS TAB -->
-        <div id="applications" class="tab-content">
-            <div class="card">
-                <h2>Visa Applications</h2>
-                
-                <table>
-                    <thead>
-                        <tr>
-                            <th>App ID</th>
-                            <th>Client</th>
-                            <th>Destination</th>
-                            <th>Status</th>
-                            <th>Progress</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="applicationsTable">
-                        <!-- Populated by API -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- SEND MESSAGE TAB -->
-        <div id="send-message" class="tab-content">
-            <div class="card">
-                <h2>Send Message to Client</h2>
-                
-                <div class="form-group">
-                    <label>Application ID</label>
-                    <input type="text" id="sendAppId" placeholder="e.g., VIS-2026-001">
-                </div>
-                
-                <div class="form-group">
-                    <label>Message Type</label>
-                    <select id="messageType" onchange="updateMessageTemplate()">
-                        <option value="checklist">Send Checklist</option>
-                        <option value="status">Send Status Update</option>
-                        <option value="reminder">Send Reminder</option>
-                    </select>
-                </div>
-                
-                <div id="messageOptions"></div>
-                
-                <div class="form-group">
-                    <label>Send Via (select all that apply):</label>
-                    <div class="channel-selector">
-                        <label><input type="checkbox" value="whatsapp" checked> WhatsApp</label>
-                        <label><input type="checkbox" value="sms"> SMS</label>
-                        <label><input type="checkbox" value="email" checked> Email</label>
-                    </div>
-                </div>
-                
-                <button class="btn btn-primary" onclick="sendMessage()">Send Message</button>
-                <div id="messageStatus" style="margin-top: 16px"></div>
-            </div>
-        </div>
-
-        <!-- DISCOUNTS TAB -->
-        <div id="discounts" class="tab-content">
-            <div class="card">
-                <h2>Client Discounts</h2>
-                <button class="btn btn-primary" onclick="openModal('newDiscountModal')">+ Add Discount</button>
-                
-                <table style="margin-top: 20px">
-                    <thead>
-                        <tr>
-                            <th>Client</th>
-                            <th>Type</th>
-                            <th>Value</th>
-                            <th>Reason</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="discountsTable">
-                        <!-- Populated by API -->
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- New Discount Modal -->
-            <div id="newDiscountModal" class="modal">
-                <div class="modal-content">
-                    <button class="close-btn" onclick="closeModal('newDiscountModal')">&times;</button>
-                    <div class="modal-header">Add Client Discount</div>
-                    
-                    <div class="form-group">
-                        <label>Client Email</label>
-                        <input type="email" id="discountClientEmail" placeholder="client@example.com">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Discount Type</label>
-                        <select id="discountType">
-                            <option>percentage</option>
-                            <option>fixed</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Discount Value</label>
-                        <input type="number" id="discountValue" placeholder="e.g., 10 or 500">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Reason</label>
-                        <input type="text" id="discountReason" placeholder="Group booking, Referral, etc.">
-                    </div>
-                    
-                    <button class="btn btn-primary" onclick="addDiscount()">Add Discount</button>
-                </div>
-            </div>
-        </div>
+        <button class="btn btn-primary btn-sm" onclick="openModal('new-app-modal')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Application
+        </button>
+      </div>
     </div>
 
-    <script>
-        const API_BASE = 'https://arya-v1-0-0.onrender.com';
-        const API_KEY = localStorage.getItem('adminToken') || '';
+    <div class="content">
 
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-            
-            document.getElementById(tabName).classList.add('active');
-            event.target.classList.add('active');
-        }
+      <!-- DASHBOARD -->
+      <div class="view active" id="view-dashboard">
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Total Applications</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--gold)" id="stat-pending">0</div><div class="stat-label">Pending Docs</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--blue)" id="stat-review">0</div><div class="stat-label">Under Review</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--green)" id="stat-approved">0</div><div class="stat-label">Approved</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--teal)" id="stat-clients">0</div><div class="stat-label">Total Clients</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Recent Applications</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>App ID</th><th>Client</th><th>Destination</th><th>Type</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead>
+              <tbody id="dashboard-apps-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
 
-        function openModal(modalId) {
-            document.getElementById(modalId).classList.add('active');
-        }
+      <!-- APPLICATIONS -->
+      <div class="view" id="view-applications">
+        <div class="page-header">
+          <div><h2>All Applications</h2><p>Manage and track all visa applications</p></div>
+          <div style="display:flex;gap:8px">
+            <select id="filter-status" onchange="loadApplications()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:13px;outline:none">
+              <option value="">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="docs_received">Docs Received</option>
+              <option value="review">Under Review</option>
+              <option value="submitted">Submitted</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="openModal('new-app-modal')">+ New Application</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>App ID</th><th>Client</th><th>Phone</th><th>Destination</th><th>Type</th><th>Status</th><th>Progress</th><th>Travel Date</th><th>Actions</th></tr></thead>
+            <tbody id="apps-table"></tbody>
+          </table>
+        </div>
+      </div>
 
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.remove('active');
-        }
+      <!-- APP DETAIL -->
+      <div class="view" id="view-app-detail">
+        <div class="page-header">
+          <div>
+            <button class="btn btn-ghost btn-sm" onclick="nav('applications')" style="margin-bottom:8px">← Back</button>
+            <h2 id="detail-app-id">VIS-2026-001</h2>
+            <p id="detail-client-name">Loading...</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="status" id="detail-status-badge">pending</span>
+            <button class="btn btn-primary btn-sm" onclick="openStatusModal()">Update Status</button>
+            <button class="btn btn-ghost btn-sm" onclick="openSendModal()">Send Message</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 320px;gap:20px">
+          <div>
+            <div class="tabs">
+              <button class="tab active" onclick="switchDetailTab('docs',this)">Documents</button>
+              <button class="tab" onclick="switchDetailTab('activity',this)">Activity Log</button>
+              <button class="tab" onclick="switchDetailTab('comms',this)">Communications</button>
+              <button class="tab" onclick="switchDetailTab('notes',this)">Team Notes</button>
+            </div>
+            <div id="detail-tab-docs">
+              <div class="doc-grid" id="docs-grid"></div>
+            </div>
+            <div id="detail-tab-activity" style="display:none">
+              <div id="activity-log"></div>
+            </div>
+            <div id="detail-tab-comms" style="display:none">
+              <div id="comm-log"></div>
+            </div>
+            <div id="detail-tab-notes" style="display:none">
+              <div class="form-group" style="margin-bottom:12px">
+                <label>Add Team Note (internal only)</label>
+                <textarea id="team-note-input" placeholder="e.g. Client called re: Dubai visa, confirm hotel dates..."></textarea>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="addTeamNote()">Save Note</button>
+              <div id="team-notes-list" style="margin-top:16px"></div>
+            </div>
+          </div>
+          <div>
+            <div class="card" style="margin-bottom:16px">
+              <div class="card-title">Application Info</div>
+              <div id="app-info-panel"></div>
+            </div>
+            <div class="card">
+              <div class="card-title">Client Info</div>
+              <div id="client-info-panel"></div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-        // Search countries
-        async function searchCountries() {
-            const query = document.getElementById('countrySearch').value;
-            try {
-                const res = await fetch(`${API_BASE}/api/search-countries`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}`},
-                    body: JSON.stringify({query})
-                });
-                const data = await res.json();
-                
-                const html = data.results.map(r => `
-                    <div class="grid-card" onclick="viewCountryDetails('${r.code}')">
-                        <h3>${r.name}</h3>
-                        <p>Click to view visa types and requirements</p>
-                    </div>
-                `).join('');
-                
-                document.getElementById('countryResults').innerHTML = html;
-            } catch (e) {
-                console.error(e);
-                alert('Error searching countries');
-            }
-        }
+      <!-- CLIENTS -->
+      <div class="view" id="view-clients">
+        <div class="page-header">
+          <div><h2>Clients</h2><p>All registered clients</p></div>
+          <button class="btn btn-primary btn-sm" onclick="openModal('new-client-modal')">+ New Client</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Applications</th><th>Joined</th><th>Actions</th></tr></thead>
+            <tbody id="clients-table"></tbody>
+          </table>
+        </div>
+      </div>
 
-        // View country details
-        async function viewCountryDetails(countryCode) {
-            try {
-                const res = await fetch(`${API_BASE}/api/country/${countryCode}`, {
-                    headers: {'Authorization': `Bearer ${API_KEY}`}
-                });
-                const data = await res.json();
-                
-                let html = `<h3>${data.display_name}</h3>`;
-                for (const [type, info] of Object.entries(data.visa_types)) {
-                    html += `
-                        <div class="card" style="margin: 12px 0">
-                            <h4>${info.name}</h4>
-                            <p><strong>Duration:</strong> ${info.duration}</p>
-                            <p><strong>Processing:</strong> ${info.processing_time}</p>
-                            <p><strong>Documents:</strong></p>
-                            <ul>
-                                ${info.documents.map(d => `<li>${d}</li>`).join('')}
-                            </ul>
-                        </div>
-                    `;
-                }
-                
-                document.getElementById('countryDetails').innerHTML = html;
-                localStorage.setItem('selectedCountry', JSON.stringify(data));
-                openModal('countryModal');
-            } catch (e) {
-                console.error(e);
-                alert('Error loading country details');
-            }
-        }
+      <!-- VFS CHECKLISTS -->
+      <div class="view" id="view-vfs">
+        <div class="page-header">
+          <div><h2>VFS Checklists</h2><p>Upload VFS PDFs, extract and edit requirements</p></div>
+          <button class="btn btn-primary btn-sm" onclick="openModal('new-checklist-modal')">+ New from VFS PDF</button>
+        </div>
+        <div class="vfs-split">
+          <div>
+            <div class="card">
+              <div class="card-title">Saved Checklists</div>
+              <div id="checklists-list"></div>
+            </div>
+          </div>
+          <div>
+            <div class="card" id="checklist-editor-card" style="display:none">
+              <div class="card-title" id="checklist-editor-title">Edit Checklist</div>
+              <div class="form-group" style="margin-bottom:12px">
+                <label>Country</label>
+                <input type="text" id="edit-checklist-country" placeholder="e.g. USA">
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>Visa Type</label>
+                  <select id="edit-checklist-type">
+                    <option>tourist</option><option>business</option><option>student</option><option>work</option><option>transit</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Service Charge (INR)</label>
+                  <input type="number" id="edit-checklist-price" placeholder="5000">
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label>Documents</label>
+              </div>
+              <div id="checklist-items-editor"></div>
+              <button class="btn btn-ghost btn-sm" style="margin-top:8px;margin-bottom:16px" onclick="addChecklistItem()">+ Add Item</button>
+              <div class="form-row">
+                <button class="btn btn-primary" onclick="saveChecklist()">Save Checklist</button>
+                <button class="btn btn-ghost" onclick="copyChecklist()">Copy to Clipboard</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-        function copyCountryDetails() {
-            const data = JSON.parse(localStorage.getItem('selectedCountry'));
-            let text = `${data.display_name}\n\n`;
-            for (const [type, info] of Object.entries(data.visa_types)) {
-                text += `${info.name}\n`;
-                text += `Duration: ${info.duration}\n`;
-                text += `Processing: ${info.processing_time}\n`;
-                text += `Documents:\n`;
-                info.documents.forEach(d => text += `  • ${d}\n`);
-                text += `\n`;
-            }
-            navigator.clipboard.writeText(text).then(() => alert('Copied to clipboard!'));
-        }
+      <!-- PACKAGES -->
+      <div class="view" id="view-packages">
+        <div class="page-header">
+          <div><h2>Visa Packages</h2><p>Standard packages with pricing and document requirements</p></div>
+          <button class="btn btn-primary btn-sm" onclick="openModal('new-package-modal')">+ New Package</button>
+        </div>
+        <div class="packages-grid" id="packages-grid"></div>
+      </div>
 
-        // Create checklist
-        async function createChecklist() {
-            const documents = document.getElementById('newDocuments').value.split('\n').filter(d => d.trim());
-            const price = parseFloat(document.getElementById('newPrice').value) || 0;
-            const discount = parseFloat(document.getElementById('newDiscount').value) || 0;
-            
-            try {
-                const res = await fetch(`${API_BASE}/admin/checklist/create`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${API_KEY}`
-                    },
-                    body: JSON.stringify({
-                        country: document.getElementById('newCountry').value,
-                        visa_type: document.getElementById('newVisaType').value,
-                        name: document.getElementById('newChecklistName').value,
-                        documents: documents,
-                        base_price: price,
-                        discount_percentage: discount
-                    })
-                });
-                
-                if (res.ok) {
-                    alert('Checklist created!');
-                    closeModal('newChecklistModal');
-                    filterChecklists();
-                } else {
-                    alert('Error creating checklist');
-                }
-            } catch (e) {
-                console.error(e);
-                alert('Error: ' + e.message);
-            }
-        }
+      <!-- SEND MESSAGE -->
+      <div class="view" id="view-messages">
+        <div class="page-header">
+          <div><h2>Send Message</h2><p>Contact clients via WhatsApp, SMS, or Email</p></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <div class="card">
+            <div class="card-title">Compose Message</div>
+            <div class="form-group" style="margin-bottom:12px">
+              <label>Application ID</label>
+              <input type="text" id="msg-app-id" placeholder="VIS-2026-001" oninput="fetchAppForMessage(this.value)">
+            </div>
+            <div id="msg-client-preview" style="display:none;background:var(--surface2);border-radius:var(--r);padding:10px;margin-bottom:12px;font-size:13px"></div>
+            <div class="form-group" style="margin-bottom:12px">
+              <label>Message Type</label>
+              <select id="msg-type" onchange="updateMsgTemplate()">
+                <option value="checklist">Send Checklist</option>
+                <option value="status">Status Update</option>
+                <option value="reminder">Document Reminder</option>
+                <option value="custom">Custom Message</option>
+              </select>
+            </div>
+            <div id="msg-type-options"></div>
+            <div class="form-group" style="margin-bottom:12px">
+              <label>Send Via</label>
+              <div class="channel-toggle">
+                <button class="channel-btn active wa" onclick="toggleChannel(this,'wa')">WhatsApp</button>
+                <button class="channel-btn sms" onclick="toggleChannel(this,'sms')">SMS</button>
+                <button class="channel-btn active email" onclick="toggleChannel(this,'email')">Email</button>
+              </div>
+            </div>
+            <button class="btn btn-primary" onclick="sendMessage()" style="width:100%;justify-content:center">Send Message</button>
+            <div id="msg-result" style="margin-top:12px"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Recent Communications</div>
+            <div id="recent-comms"></div>
+          </div>
+        </div>
+      </div>
 
-        // Send message
-        async function sendMessage() {
-            const appId = document.getElementById('sendAppId').value;
-            const messageType = document.getElementById('messageType').value;
-            const channels = Array.from(document.querySelectorAll('.channel-selector input:checked')).map(el => el.value);
-            
-            if (!appId || channels.length === 0) {
-                alert('Please select app ID and channels');
-                return;
-            }
-            
-            const msgDiv = document.getElementById('messageStatus');
-            msgDiv.innerHTML = '<div class="spinner"></div> Sending...';
-            
-            try {
-                let endpoint = '';
-                let body = {app_id: appId, channels};
-                
-                if (messageType === 'checklist') {
-                    endpoint = '/admin/send-checklist';
-                } else if (messageType === 'status') {
-                    endpoint = '/admin/send-status-update';
-                    body.new_status = document.getElementById('statusSelect').value;
-                    body.note = document.getElementById('statusNote').value;
-                } else if (messageType === 'reminder') {
-                    endpoint = '/admin/send-reminder';
-                    body.missing_docs = document.getElementById('missingDocs').value.split('\n').filter(d => d.trim());
-                }
-                
-                const res = await fetch(`${API_BASE}${endpoint}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${API_KEY}`
-                    },
-                    body: JSON.stringify(body)
-                });
-                
-                if (res.ok) {
-                    msgDiv.innerHTML = '<div class="alert alert-success">✓ Message sent successfully!</div>';
-                } else {
-                    msgDiv.innerHTML = '<div class="alert">Error sending message</div>';
-                }
-            } catch (e) {
-                msgDiv.innerHTML = '<div class="alert">Error: ' + e.message + '</div>';
-            }
-        }
+      <!-- EXPORT -->
+      <div class="view" id="view-export">
+        <div class="page-header">
+          <div><h2>Export CRM</h2><p>Download all data as Excel / CSV for Microsoft 365</p></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px">
+          <div class="card">
+            <div style="font-size:28px;margin-bottom:12px">📊</div>
+            <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">Full CRM Export</h3>
+            <p style="font-size:13px;color:var(--text3);margin-bottom:16px">All applications, clients, statuses, progress, and contact details.</p>
+            <button class="btn btn-primary" onclick="exportCRM('full')">Download Excel (.xlsx)</button>
+          </div>
+          <div class="card">
+            <div style="font-size:28px;margin-bottom:12px">📋</div>
+            <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">Applications Only</h3>
+            <p style="font-size:13px;color:var(--text3);margin-bottom:16px">Just applications with current status and progress for team review.</p>
+            <button class="btn btn-primary" onclick="exportCRM('applications')">Download CSV</button>
+          </div>
+          <div class="card">
+            <div style="font-size:28px;margin-bottom:12px">💬</div>
+            <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">Communication Log</h3>
+            <p style="font-size:13px;color:var(--text3);margin-bottom:16px">All WhatsApp, SMS, Email sent — who got what and when.</p>
+            <button class="btn btn-primary" onclick="exportCRM('comms')">Download CSV</button>
+          </div>
+          <div class="card">
+            <div style="font-size:28px;margin-bottom:12px">👥</div>
+            <h3 style="font-size:15px;font-weight:600;margin-bottom:6px">Client Directory</h3>
+            <p style="font-size:13px;color:var(--text3);margin-bottom:16px">All clients with contact details and application count.</p>
+            <button class="btn btn-primary" onclick="exportCRM('clients')">Download CSV</button>
+          </div>
+        </div>
+      </div>
 
-        function updateMessageTemplate() {
-            const type = document.getElementById('messageType').value;
-            let html = '';
-            
-            if (type === 'status') {
-                html = `
-                    <div class="form-group">
-                        <label>New Status</label>
-                        <select id="statusSelect">
-                            <option>pending</option>
-                            <option>docs_received</option>
-                            <option>review</option>
-                            <option>submitted</option>
-                            <option>approved</option>
-                            <option>rejected</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Additional Note</label>
-                        <textarea id="statusNote" placeholder="Optional message to client..."></textarea>
-                    </div>
-                `;
-            } else if (type === 'reminder') {
-                html = `
-                    <div class="form-group">
-                        <label>Missing Documents (one per line)</label>
-                        <textarea id="missingDocs" placeholder="Passport&#10;Bank Statement&#10;..."></textarea>
-                    </div>
-                `;
-            }
-            
-            document.getElementById('messageOptions').innerHTML = html;
-        }
+    </div>
+  </div>
+</div>
 
-        // Initialize
-        updateMessageTemplate();
-        searchCountries();
+<!-- MODALS -->
 
-        // Load applications on tab switch
-        document.addEventListener('click', (e) => {
-            if (e.target.textContent.includes('Applications')) {
-                loadApplications();
-            }
-        });
+<!-- New Application -->
+<div class="modal-overlay" id="new-app-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">New Visa Application</span>
+      <button class="modal-close" onclick="closeModal('new-app-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Client Email</label>
+          <input type="email" id="na-email" placeholder="client@example.com">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Destination Country</label>
+            <input type="text" id="na-destination" placeholder="e.g. UAE, USA, UK">
+          </div>
+          <div class="form-group">
+            <label>Visa Type</label>
+            <select id="na-visa-type">
+              <option>tourist</option><option>business</option><option>student</option><option>work</option><option>transit</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Travel Date</label>
+            <input type="date" id="na-travel-date">
+          </div>
+          <div class="form-group">
+            <label>Group Size</label>
+            <input type="number" id="na-group-size" value="1" min="1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Checklist Template (optional)</label>
+          <select id="na-checklist-id">
+            <option value="">Use default checklist</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Auto-notify client via</label>
+          <div class="channel-toggle" style="margin:6px 0">
+            <button class="channel-btn active wa" onclick="toggleChannel(this,'wa')">WhatsApp</button>
+            <button class="channel-btn active email" onclick="toggleChannel(this,'email')">Email</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('new-app-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="createApplication()">Create Application</button>
+    </div>
+  </div>
+</div>
 
-        async function loadApplications() {
-            try {
-                const res = await fetch(`${API_BASE}/admin/dashboard`, {
-                    headers: {'Authorization': `Bearer ${API_KEY}`}
-                });
-                const data = await res.json();
-                
-                const html = data.applications.map(app => `
-                    <tr>
-                        <td>${app.app_id}</td>
-                        <td>${app.client_name}</td>
-                        <td>${app.destination}</td>
-                        <td><span class="badge badge-primary">${app.status}</span></td>
-                        <td>${app.progress}%</td>
-                        <td>
-                            <button class="btn btn-small btn-secondary" onclick="editApplication('${app.app_id}')">Edit</button>
-                        </td>
-                    </tr>
-                `).join('');
-                
-                document.getElementById('applicationsTable').innerHTML = html;
-            } catch (e) {
-                console.error(e);
-            }
-        }
-    </script>
+<!-- New Client -->
+<div class="modal-overlay" id="new-client-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">New Client</span>
+      <button class="modal-close" onclick="closeModal('new-client-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" id="nc-name" placeholder="e.g. Rahul Sharma">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" id="nc-phone" placeholder="+91 98765 43210">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="nc-email" placeholder="rahul@email.com">
+          </div>
+          <div class="form-group">
+            <label>Password (portal login)</label>
+            <input type="text" id="nc-password" placeholder="Set a password">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Upload Passport (PDF/JPG) — stored securely</label>
+          <div class="file-drop" id="passport-drop" onclick="document.getElementById('passport-file').click()">
+            <input type="file" id="passport-file" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="handlePassportUpload(this)">
+            <p>Click to upload passport scan</p>
+            <span>PDF, JPG, PNG — max 5MB</span>
+          </div>
+          <div id="passport-preview" style="display:none;margin-top:8px;font-size:12px;color:var(--green)"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('new-client-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="createClient()">Create Client</button>
+    </div>
+  </div>
+</div>
+
+<!-- New VFS Checklist -->
+<div class="modal-overlay" id="new-checklist-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Import VFS Checklist</span>
+      <button class="modal-close" onclick="closeModal('new-checklist-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Country</label>
+            <input type="text" id="vfs-country" placeholder="e.g. USA">
+          </div>
+          <div class="form-group">
+            <label>Visa Type</label>
+            <select id="vfs-visa-type">
+              <option>tourist</option><option>business</option><option>student</option><option>work</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Upload VFS PDF</label>
+          <div class="file-drop" onclick="document.getElementById('vfs-pdf-file').click()">
+            <input type="file" id="vfs-pdf-file" accept=".pdf" style="display:none" onchange="handleVFSUpload(this)">
+            <p>Click to upload VFS checklist PDF</p>
+            <span>PDF only — we'll extract the document list</span>
+          </div>
+        </div>
+        <div id="vfs-extracted" style="display:none">
+          <div class="form-group">
+            <label>Extracted Text (review and clean up)</label>
+            <textarea id="vfs-raw-text" style="min-height:120px;font-family:var(--mono);font-size:11px"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Documents (one per line — edit as needed)</label>
+            <textarea id="vfs-docs-text" style="min-height:120px"></textarea>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Or type documents manually (one per line)</label>
+          <textarea id="vfs-manual-docs" placeholder="Passport&#10;Recent Photo&#10;Bank Statement (3 months)&#10;Hotel Booking&#10;Return Flight Ticket" style="min-height:100px"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Service Charge (INR)</label>
+          <input type="number" id="vfs-price" placeholder="5000">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('new-checklist-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveVFSChecklist()">Save Checklist</button>
+    </div>
+  </div>
+</div>
+
+<!-- New Package -->
+<div class="modal-overlay" id="new-package-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">New Visa Package</span>
+      <button class="modal-close" onclick="closeModal('new-package-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Country</label>
+            <input type="text" id="pkg-country" placeholder="UAE">
+          </div>
+          <div class="form-group">
+            <label>Visa Type</label>
+            <select id="pkg-type">
+              <option>tourist</option><option>business</option><option>student</option><option>work</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Package Name</label>
+            <input type="text" id="pkg-name" placeholder="UAE Tourist Standard">
+          </div>
+          <div class="form-group">
+            <label>Price (INR)</label>
+            <input type="number" id="pkg-price" placeholder="5000">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Processing Time</label>
+            <input type="text" id="pkg-processing" placeholder="1-2 working days">
+          </div>
+          <div class="form-group">
+            <label>Visa Validity</label>
+            <input type="text" id="pkg-validity" placeholder="30 days">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Documents (one per line)</label>
+          <textarea id="pkg-docs" placeholder="Passport&#10;Photo&#10;Bank Statement&#10;Hotel Booking&#10;Return Flight"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <input type="text" id="pkg-notes" placeholder="e.g. Embassy appointment required">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('new-package-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="savePackage()">Save Package</button>
+    </div>
+  </div>
+</div>
+
+<!-- Update Status Modal -->
+<div class="modal-overlay" id="status-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <span class="modal-title">Update Status</span>
+      <button class="modal-close" onclick="closeModal('status-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px">
+        <label>New Status</label>
+        <select id="new-status-select">
+          <option value="pending">Pending Documents</option>
+          <option value="docs_received">Docs Received</option>
+          <option value="review">Under Review</option>
+          <option value="submitted">Submitted to Embassy</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Note for client (optional)</label>
+        <textarea id="status-note" placeholder="e.g. Submitted to UAE Embassy. Expected in 5-7 days."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Notify via</label>
+        <div class="channel-toggle" style="margin:6px 0">
+          <button class="channel-btn active wa" onclick="toggleChannel(this,'wa')">WhatsApp</button>
+          <button class="channel-btn sms" onclick="toggleChannel(this,'sms')">SMS</button>
+          <button class="channel-btn active email" onclick="toggleChannel(this,'email')">Email</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('status-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitStatusUpdate()">Update & Notify</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+const API = 'https://arya-v1-0-0.onrender.com'; // UPDATE THIS TO YOUR VISA SYSTEM URL
+let TOKEN = '';
+let currentAppId = '';
+let editingChecklistId = null;
+let packages = JSON.parse(localStorage.getItem('mkov_packages') || '[]');
+let checklists = JSON.parse(localStorage.getItem('mkov_checklists') || '[]');
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const email = document.getElementById('login-email').value;
+  const pass  = document.getElementById('login-password').value;
+  try {
+    const r = await fetch(`${API}/auth/admin/login`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email, password: pass})
+    });
+    if (!r.ok) throw new Error('Bad credentials');
+    const data = await r.json();
+    TOKEN = data.token;
+    document.getElementById('user-name-display').textContent = data.name;
+    document.getElementById('user-avatar').textContent = data.name[0].toUpperCase();
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    loadDashboard();
+    loadChecklistsForSelect();
+    renderPackages();
+    renderChecklists();
+  } catch(e) {
+    document.getElementById('login-error').style.display = 'block';
+    document.getElementById('login-error').textContent = 'Invalid email or password';
+  }
+}
+
+function api(path, opts={}) {
+  return fetch(`${API}${path}`, {
+    ...opts,
+    headers: {'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`, ...(opts.headers||{})}
+  }).then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  });
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+const PAGE_TITLES = {
+  dashboard:'Dashboard', applications:'Applications', clients:'Clients',
+  vfs:'VFS Checklists', packages:'Packages', messages:'Send Message', export:'Export CRM'
+};
+
+function nav(page) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const view = document.getElementById(`view-${page}`);
+  if (view) view.classList.add('active');
+  document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
+  event?.currentTarget?.classList.add('active');
+
+  if (page === 'dashboard') loadDashboard();
+  else if (page === 'applications') loadApplications();
+  else if (page === 'clients') loadClients();
+  else if (page === 'messages') loadRecentComms();
+  else if (page === 'packages') renderPackages();
+  else if (page === 'vfs') renderChecklists();
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const data = await api('/admin/dashboard');
+    const s = data.stats;
+    document.getElementById('stat-total').textContent    = s.total;
+    document.getElementById('stat-pending').textContent  = s.pending;
+    document.getElementById('stat-review').textContent   = s.review;
+    document.getElementById('stat-approved').textContent = s.approved;
+    document.getElementById('stat-clients').textContent  = s.clients;
+    document.getElementById('nav-pending-count').textContent = s.pending;
+
+    const tbody = document.getElementById('dashboard-apps-table');
+    tbody.innerHTML = data.applications.slice(0,10).map(a => `
+      <tr class="clickable" onclick="viewApp('${a.app_id}')">
+        <td><code style="color:var(--teal);font-family:var(--mono)">${a.app_id}</code></td>
+        <td>${a.client_name}</td>
+        <td>${a.destination}</td>
+        <td style="text-transform:capitalize">${a.visa_type}</td>
+        <td><span class="status status-${a.status}">${a.status.replace('_',' ')}</span></td>
+        <td><div class="progress-wrap"><div class="progress-bar"><div class="progress-fill" style="width:${a.progress}%"></div></div><span class="progress-pct">${a.progress}%</span></div></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();viewApp('${a.app_id}')">Open</button></td>
+      </tr>
+    `).join('');
+  } catch(e) { console.error(e); }
+}
+
+// ── Applications ──────────────────────────────────────────────────────────────
+async function loadApplications() {
+  try {
+    const data = await api('/admin/dashboard');
+    const filter = document.getElementById('filter-status').value;
+    const apps = filter ? data.applications.filter(a => a.status === filter) : data.applications;
+    document.getElementById('apps-table').innerHTML = apps.map(a => `
+      <tr class="clickable" onclick="viewApp('${a.app_id}')">
+        <td><code style="color:var(--teal);font-family:var(--mono)">${a.app_id}</code></td>
+        <td><strong>${a.client_name}</strong></td>
+        <td>${a.client_phone || '—'}</td>
+        <td>${a.destination}</td>
+        <td style="text-transform:capitalize">${a.visa_type}</td>
+        <td><span class="status status-${a.status}">${a.status.replace('_',' ')}</span></td>
+        <td><div class="progress-wrap"><div class="progress-bar"><div class="progress-fill" style="width:${a.progress}%"></div></div><span class="progress-pct">${a.progress}%</span></div></td>
+        <td>${a.travel_date || '—'}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();viewApp('${a.app_id}')">Open</button>
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();quickSendMsg('${a.app_id}')">Msg</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch(e) { console.error(e); }
+}
+
+// ── App Detail ────────────────────────────────────────────────────────────────
+async function viewApp(appId) {
+  currentAppId = appId;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-app-detail').classList.add('active');
+  document.getElementById('page-title').textContent = appId;
+
+  try {
+    const data = await api(`/admin/application/${appId}`);
+    const a = data.application;
+    document.getElementById('detail-app-id').textContent = a.app_id;
+    document.getElementById('detail-client-name').textContent = `${a.client_name} — ${a.destination} ${a.visa_type}`;
+    document.getElementById('detail-status-badge').textContent = a.status.replace('_',' ');
+    document.getElementById('detail-status-badge').className = `status status-${a.status}`;
+
+    // App info panel
+    document.getElementById('app-info-panel').innerHTML = `
+      <div style="display:grid;gap:10px;font-size:13px">
+        ${infoRow('Destination', a.destination)}
+        ${infoRow('Visa Type', a.visa_type)}
+        ${infoRow('Travel Date', a.travel_date || '—')}
+        ${infoRow('Group Size', a.group_size)}
+        ${infoRow('Progress', `${a.progress}%`)}
+        ${infoRow('Created', a.created_at?.split('T')[0] || '—')}
+        ${a.embassy_ref ? infoRow('Embassy Ref', a.embassy_ref) : ''}
+      </div>
+    `;
+
+    // Client info panel
+    document.getElementById('client-info-panel').innerHTML = `
+      <div style="display:grid;gap:10px;font-size:13px">
+        ${infoRow('Name', a.client_name)}
+        ${infoRow('Email', a.client_email)}
+        ${infoRow('Phone', a.client_phone || '—')}
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="window.open('https://wa.me/${(a.client_phone||'').replace(/\D/g,'')}')">WhatsApp</button>
+        <button class="btn btn-ghost btn-sm" onclick="window.open('mailto:${a.client_email}')">Email</button>
+        <button class="btn btn-ghost btn-sm" onclick="viewPassport(${a.client_id || 0})">View Passport</button>
+      </div>
+    `;
+
+    // Documents grid
+    document.getElementById('docs-grid').innerHTML = data.documents.map(d => `
+      <div class="doc-card ${d.status}" onclick="handleDocAction('${appId}','${d.doc_type}','${d.status}','${d.id}')">
+        <span class="doc-icon">${docIcon(d.doc_type)}</span>
+        <div class="doc-name">${d.doc_type.replace(/_/g,' ')}</div>
+        <div class="doc-status">${d.status}</div>
+        <div class="doc-badge ${d.status}">${d.status === 'verified' ? '✓' : d.status === 'uploaded' ? '↑' : '!'}</div>
+      </div>
+    `).join('');
+
+    // Activity log
+    document.getElementById('activity-log').innerHTML = data.activity.map(l => `
+      <div class="activity-item">
+        <div class="activity-dot"></div>
+        <div class="activity-content">
+          <div class="activity-action">${l.action}</div>
+          <div class="activity-detail">${l.detail || ''}</div>
+          <div class="activity-detail" style="margin-top:2px">${l.actor}</div>
+        </div>
+        <div class="activity-time">${l.created_at?.split('T')[0] || ''}</div>
+      </div>
+    `).join('') || '<p style="color:var(--text3);font-size:13px">No activity yet.</p>';
+
+    // Comm log
+    document.getElementById('comm-log').innerHTML = (data.comm_log || []).map(c => `
+      <div class="comm-item">
+        <div class="comm-channel ${c.channel}">${channelEmoji(c.channel)}</div>
+        <div class="comm-body">
+          <div class="comm-title">${c.message_type?.replace('_',' ')} via ${c.channel}</div>
+          <div class="comm-time">${c.created_at?.split('T')[0] || ''}</div>
+        </div>
+        <div class="comm-status ${c.sent_status}">${c.sent_status}</div>
+      </div>
+    `).join('') || '<p style="color:var(--text3);font-size:13px">No messages sent yet.</p>';
+
+  } catch(e) { console.error(e); toast('Failed to load application','error'); }
+}
+
+function infoRow(label, value) {
+  return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">${label}</span><span style="font-weight:500">${value}</span></div>`;
+}
+
+function docIcon(type) {
+  const icons = {passport:'📘',photo:'📷',bank_statement:'🏦',hotel_booking:'🏨',flight_ticket:'✈',travel_insurance:'🛡',invitation_letter:'📩',company_letter:'🏢',admission_letter:'🎓',accommodation_proof:'🏠',onward_ticket:'🎫'};
+  return icons[type] || '📄';
+}
+
+function channelEmoji(ch) {
+  return {whatsapp:'💬',email:'📧',sms:'📱'}[ch] || '📤';
+}
+
+function switchDetailTab(tab, el) {
+  ['docs','activity','comms','notes'].forEach(t => {
+    document.getElementById(`detail-tab-${t}`).style.display = t === tab ? 'block' : 'none';
+  });
+  document.querySelectorAll('#view-app-detail .tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  if (tab === 'notes') loadTeamNotes(currentAppId);
+}
+
+async function addTeamNote() {
+  const note = document.getElementById('team-note-input').value.trim();
+  if (!note) return;
+  try {
+    await api(`/admin/application/${currentAppId}/team-note`, {
+      method:'POST', body: JSON.stringify({note})
+    });
+    document.getElementById('team-note-input').value = '';
+    toast('Note saved');
+    loadTeamNotes(currentAppId);
+  } catch(e) { toast('Error saving note','error'); }
+}
+
+async function loadTeamNotes(appId) {
+  try {
+    const data = await api(`/admin/application/${appId}/team-notes`);
+    const list = document.getElementById('team-notes-list');
+    if (!data.notes.length) {
+      list.innerHTML = '<p style="color:var(--text3);font-size:13px">No notes yet.</p>';
+      return;
+    }
+    list.innerHTML = data.notes.map(n => `
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-bottom:8px">
+        <div style="font-size:12px;color:var(--teal);font-weight:600;margin-bottom:4px">${n.author} · ${n.created_at?.split('T')[0]}</div>
+        <div style="font-size:13px">${n.note}</div>
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+function handleDocAction(appId, docType, status, docId) {
+  if (status === 'uploaded') {
+    if (confirm('Mark this document as verified?')) {
+      api(`/admin/application/${appId}/verify-doc`, {
+        method:'POST', body: JSON.stringify({doc_id: parseInt(docId), status:'verified'})
+      }).then(() => { toast('Document verified'); viewApp(appId); });
+    }
+  } else if (status === 'verified') {
+    toast('Document already verified');
+  } else {
+    toast('No file uploaded yet for this document');
+  }
+}
+
+// ── Status Update ─────────────────────────────────────────────────────────────
+function openStatusModal() { openModal('status-modal'); }
+
+async function submitStatusUpdate() {
+  const status   = document.getElementById('new-status-select').value;
+  const note     = document.getElementById('status-note').value;
+  const channels = getActiveChannels(document.getElementById('status-modal'));
+  try {
+    await api(`/admin/application/${currentAppId}/status`, {
+      method:'POST', body: JSON.stringify({status, note, channels})
+    });
+    closeModal('status-modal');
+    toast('Status updated and client notified');
+    viewApp(currentAppId);
+  } catch(e) { toast('Error updating status','error'); }
+}
+
+// ── Clients ───────────────────────────────────────────────────────────────────
+async function loadClients() {
+  try {
+    const data = await api('/admin/dashboard');
+    const clients = [...new Map(data.applications.map(a => [a.client_email, a])).values()];
+    document.getElementById('clients-table').innerHTML = clients.map(c => `
+      <tr>
+        <td><strong>${c.client_name}</strong></td>
+        <td>${c.client_email}</td>
+        <td>${c.client_phone || '—'}</td>
+        <td>${data.applications.filter(a => a.client_email === c.client_email).length}</td>
+        <td>—</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="window.open('mailto:${c.client_email}')">Email</button></td>
+      </tr>
+    `).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function createClient() {
+  const name     = document.getElementById('nc-name').value.trim();
+  const email    = document.getElementById('nc-email').value.trim();
+  const phone    = document.getElementById('nc-phone').value.trim();
+  const password = document.getElementById('nc-password').value.trim();
+  if (!name || !email || !password) return toast('Fill all required fields','error');
+
+  // Handle passport upload
+  const passportFile = document.getElementById('passport-file').files[0];
+  let passportB64 = '';
+  if (passportFile) {
+    passportB64 = await fileToBase64(passportFile);
+  }
+
+  try {
+    await api('/admin/clients', {
+      method:'POST', body: JSON.stringify({name, email, phone, password, passport_b64: passportB64})
+    });
+    closeModal('new-client-modal');
+    toast('Client created successfully');
+    loadClients();
+  } catch(e) { toast('Error: ' + e.message,'error'); }
+}
+
+async function createApplication() {
+  const email       = document.getElementById('na-email').value.trim();
+  const destination = document.getElementById('na-destination').value.trim();
+  const visa_type   = document.getElementById('na-visa-type').value;
+  const travel_date = document.getElementById('na-travel-date').value;
+  const group_size  = parseInt(document.getElementById('na-group-size').value) || 1;
+  const checklist_id= document.getElementById('na-checklist-id').value || null;
+
+  if (!email || !destination) return toast('Fill required fields','error');
+
+  try {
+    const data = await api('/admin/application', {
+      method:'POST', body: JSON.stringify({
+        client_email: email, destination, visa_type, travel_date,
+        group_size, checklist_id: checklist_id ? parseInt(checklist_id) : null
+      })
+    });
+    closeModal('new-app-modal');
+    toast(`Application ${data.app_id} created`);
+    loadDashboard();
+  } catch(e) { toast('Error: ' + e.message,'error'); }
+}
+
+// ── VFS Checklists ────────────────────────────────────────────────────────────
+function handleVFSUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  // Since we can't run pdfjs server-side here, show manual text area
+  document.getElementById('vfs-extracted').style.display = 'block';
+  document.getElementById('vfs-raw-text').value = `PDF uploaded: ${file.name}\n\nCould not extract text in browser. Please manually paste the document list below, or type the required documents in the "type manually" field.`;
+  toast('PDF uploaded — please type/paste documents below');
+}
+
+function handlePassportUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const preview = document.getElementById('passport-preview');
+  preview.style.display = 'block';
+  preview.textContent = `✓ ${file.name} ready to upload (${(file.size/1024).toFixed(0)} KB)`;
+}
+
+async function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = () => res(reader.result.split(',')[1]);
+    reader.onerror = rej;
+    reader.readAsDataURL(file);
+  });
+}
+
+function saveVFSChecklist() {
+  const country  = document.getElementById('vfs-country').value.trim();
+  const type     = document.getElementById('vfs-visa-type').value;
+  const price    = parseFloat(document.getElementById('vfs-price').value) || 0;
+  const manual   = document.getElementById('vfs-manual-docs').value;
+  const extracted= document.getElementById('vfs-docs-text').value;
+  const raw      = manual || extracted;
+  const docs     = raw.split('\n').map(d => d.trim()).filter(Boolean);
+
+  if (!country || docs.length === 0) return toast('Enter country and at least one document','error');
+
+  const cl = {
+    id: Date.now(), country, visa_type: type,
+    name: `${country} ${type} — VFS`,
+    documents: docs, base_price: price, discount_percentage: 0,
+    final_price: price, created_at: new Date().toISOString()
+  };
+
+  // Save locally + push to API
+  checklists.push(cl);
+  localStorage.setItem('mkov_checklists', JSON.stringify(checklists));
+
+  api('/admin/checklist/create', {
+    method:'POST', body: JSON.stringify({
+      country, visa_type: type, name: cl.name,
+      documents: docs, base_price: price, discount_percentage: 0
+    })
+  }).then(r => {
+    if (r.id) { cl.api_id = r.id; localStorage.setItem('mkov_checklists', JSON.stringify(checklists)); }
+  }).catch(() => {});
+
+  closeModal('new-checklist-modal');
+  renderChecklists();
+  loadChecklistsForSelect();
+  toast('Checklist saved');
+}
+
+function renderChecklists() {
+  const container = document.getElementById('checklists-list');
+  if (checklists.length === 0) {
+    container.innerHTML = '<p style="color:var(--text3);font-size:13px">No checklists yet. Click "+ New from VFS PDF" to add one.</p>';
+    return;
+  }
+  container.innerHTML = checklists.map((cl, i) => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--surface2);border-radius:var(--r);margin-bottom:8px;border:1px solid var(--border)">
+      <div>
+        <div style="font-size:13px;font-weight:600">${cl.country} — ${cl.visa_type}</div>
+        <div style="font-size:12px;color:var(--text3)">${cl.documents.length} documents · ₹${cl.final_price || 0}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="editChecklist(${i})">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="copyChecklistText(${i})">Copy</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteChecklist(${i})">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function editChecklist(i) {
+  editingChecklistId = i;
+  const cl = checklists[i];
+  document.getElementById('checklist-editor-card').style.display = 'block';
+  document.getElementById('checklist-editor-title').textContent = `Edit: ${cl.country} ${cl.visa_type}`;
+  document.getElementById('edit-checklist-country').value = cl.country;
+  document.getElementById('edit-checklist-type').value = cl.visa_type;
+  document.getElementById('edit-checklist-price').value = cl.base_price;
+  renderChecklistEditor(cl.documents);
+}
+
+function renderChecklistEditor(docs) {
+  document.getElementById('checklist-items-editor').innerHTML = docs.map((d, i) => `
+    <div class="checklist-item" id="ci-${i}">
+      <span class="drag-handle">⠿</span>
+      <input type="text" value="${d}" id="ci-val-${i}">
+      <button class="remove-item" onclick="removeChecklistItem(${i})">×</button>
+    </div>
+  `).join('');
+}
+
+function addChecklistItem() {
+  const items = document.querySelectorAll('#checklist-items-editor .checklist-item');
+  const i = items.length;
+  const div = document.createElement('div');
+  div.className = 'checklist-item';
+  div.id = `ci-${i}`;
+  div.innerHTML = `<span class="drag-handle">⠿</span><input type="text" id="ci-val-${i}" placeholder="Document name"><button class="remove-item" onclick="this.closest('.checklist-item').remove()">×</button>`;
+  document.getElementById('checklist-items-editor').appendChild(div);
+}
+
+function removeChecklistItem(i) {
+  document.getElementById(`ci-${i}`)?.remove();
+}
+
+function getCurrentEditorDocs() {
+  const inputs = document.querySelectorAll('#checklist-items-editor input[type=text]');
+  return Array.from(inputs).map(i => i.value.trim()).filter(Boolean);
+}
+
+function saveChecklist() {
+  if (editingChecklistId === null) return;
+  const docs = getCurrentEditorDocs();
+  const price = parseFloat(document.getElementById('edit-checklist-price').value) || 0;
+  checklists[editingChecklistId].documents = docs;
+  checklists[editingChecklistId].base_price = price;
+  checklists[editingChecklistId].final_price = price;
+  checklists[editingChecklistId].country = document.getElementById('edit-checklist-country').value;
+  checklists[editingChecklistId].visa_type = document.getElementById('edit-checklist-type').value;
+  localStorage.setItem('mkov_checklists', JSON.stringify(checklists));
+  renderChecklists();
+  toast('Checklist saved');
+}
+
+function copyChecklist() {
+  const docs = getCurrentEditorDocs();
+  const country = document.getElementById('edit-checklist-country').value;
+  const type = document.getElementById('edit-checklist-type').value;
+  const text = `${country.toUpperCase()} VISA — ${type.toUpperCase()}\n\nRequired Documents:\n${docs.map((d,i) => `${i+1}. ${d}`).join('\n')}`;
+  navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard'));
+}
+
+function copyChecklistText(i) {
+  const cl = checklists[i];
+  const text = `${cl.country.toUpperCase()} VISA — ${cl.visa_type.toUpperCase()}\n\nRequired Documents:\n${cl.documents.map((d,j) => `${j+1}. ${d}`).join('\n')}`;
+  navigator.clipboard.writeText(text).then(() => toast('Copied'));
+}
+
+function deleteChecklist(i) {
+  if (!confirm('Delete this checklist?')) return;
+  checklists.splice(i, 1);
+  localStorage.setItem('mkov_checklists', JSON.stringify(checklists));
+  renderChecklists();
+}
+
+function loadChecklistsForSelect() {
+  const sel = document.getElementById('na-checklist-id');
+  if (!sel) return;
+  const opts = checklists.map(cl => `<option value="${cl.api_id || ''}">${cl.country} — ${cl.visa_type} (₹${cl.final_price})</option>`).join('');
+  sel.innerHTML = '<option value="">Use default checklist</option>' + opts;
+}
+
+// ── Packages ──────────────────────────────────────────────────────────────────
+const FLAGS = {UAE:'🇦🇪',USA:'🇺🇸',UK:'🇬🇧',Canada:'🇨🇦',Australia:'🇦🇺',Singapore:'🇸🇬',Germany:'🇩🇪',Japan:'🇯🇵',France:'🇫🇷',Italy:'🇮🇹',Thailand:'🇹🇭',Bali:'🇮🇩'};
+
+function savePackage() {
+  const pkg = {
+    id: Date.now(),
+    country: document.getElementById('pkg-country').value.trim(),
+    type: document.getElementById('pkg-type').value,
+    name: document.getElementById('pkg-name').value.trim(),
+    price: parseFloat(document.getElementById('pkg-price').value) || 0,
+    processing: document.getElementById('pkg-processing').value.trim(),
+    validity: document.getElementById('pkg-validity').value.trim(),
+    documents: document.getElementById('pkg-docs').value.split('\n').map(d => d.trim()).filter(Boolean),
+    notes: document.getElementById('pkg-notes').value.trim(),
+  };
+  if (!pkg.country || !pkg.name) return toast('Fill required fields','error');
+  packages.push(pkg);
+  localStorage.setItem('mkov_packages', JSON.stringify(packages));
+  closeModal('new-package-modal');
+  renderPackages();
+  toast('Package saved');
+}
+
+function deletePackage(id) {
+  if (!confirm('Delete this package?')) return;
+  packages = packages.filter(p => p.id !== id);
+  localStorage.setItem('mkov_packages', JSON.stringify(packages));
+  renderPackages();
+}
+
+function renderPackages() {
+  const grid = document.getElementById('packages-grid');
+  if (packages.length === 0) {
+    grid.innerHTML = '<div class="card" style="grid-column:1/-1"><p style="color:var(--text3);font-size:13px">No packages yet. Click "+ New Package" to add one.</p></div>';
+    return;
+  }
+  grid.innerHTML = packages.map(p => `
+    <div class="package-card">
+      <div class="package-header">
+        <div class="package-flag">${FLAGS[p.country] || '🌍'}</div>
+        <div class="package-name">${p.name}</div>
+        <div class="package-type">${p.type} · ${p.processing}</div>
+      </div>
+      <div class="package-body">
+        <div class="package-price">₹${p.price.toLocaleString('en-IN')} <span>/ application</span></div>
+        <ul class="package-docs">
+          ${p.documents.slice(0,5).map(d => `<li>${d}</li>`).join('')}
+          ${p.documents.length > 5 ? `<li style="color:var(--text3)">+${p.documents.length-5} more</li>` : ''}
+        </ul>
+        ${p.notes ? `<p style="font-size:11px;color:var(--text3);margin-bottom:12px">${p.notes}</p>` : ''}
+        <div class="package-actions">
+          <button class="btn btn-ghost btn-sm" onclick="copyPackageText(${p.id})">Copy</button>
+          <button class="btn btn-danger btn-sm" onclick="deletePackage(${p.id})">Delete</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function copyPackageText(id) {
+  const p = packages.find(p => p.id === id);
+  if (!p) return;
+  const text = `${p.name.toUpperCase()}\nType: ${p.type} | Processing: ${p.processing} | Validity: ${p.validity}\nPrice: INR ${p.price.toLocaleString('en-IN')}\n\nDocuments Required:\n${p.documents.map((d,i) => `${i+1}. ${d}`).join('\n')}\n\n${p.notes}`;
+  navigator.clipboard.writeText(text).then(() => toast('Package details copied'));
+}
+
+// ── Messaging ─────────────────────────────────────────────────────────────────
+async function fetchAppForMessage(appId) {
+  if (appId.length < 10) return;
+  try {
+    const data = await api(`/admin/application/${appId}`);
+    const a = data.application;
+    const preview = document.getElementById('msg-client-preview');
+    preview.style.display = 'block';
+    preview.innerHTML = `<strong>${a.client_name}</strong> · ${a.destination} ${a.visa_type} · ${a.client_phone || 'no phone'} · ${a.client_email}`;
+  } catch(e) {}
+}
+
+function updateMsgTemplate() {
+  const type = document.getElementById('msg-type').value;
+  const container = document.getElementById('msg-type-options');
+  if (type === 'status') {
+    container.innerHTML = `
+      <div class="form-group" style="margin-bottom:12px">
+        <label>New Status</label>
+        <select id="msg-status"><option value="pending">Pending</option><option value="docs_received">Docs Received</option><option value="review">Under Review</option><option value="submitted">Submitted</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
+      </div>
+      <div class="form-group" style="margin-bottom:12px"><label>Note</label><textarea id="msg-note" placeholder="Optional note for client..."></textarea></div>
+    `;
+  } else if (type === 'reminder') {
+    container.innerHTML = `<div class="form-group" style="margin-bottom:12px"><label>Missing Documents (one per line)</label><textarea id="msg-missing" placeholder="Passport\nBank Statement\n..."></textarea></div>`;
+  } else if (type === 'custom') {
+    container.innerHTML = `<div class="form-group" style="margin-bottom:12px"><label>Custom Message</label><textarea id="msg-custom" placeholder="Type your message..."></textarea></div>`;
+  } else {
+    container.innerHTML = '';
+  }
+}
+
+async function sendMessage() {
+  const appId    = document.getElementById('msg-app-id').value.trim();
+  const type     = document.getElementById('msg-type').value;
+  const channels = getActiveChannels(document.getElementById('view-messages'));
+  if (!appId) return toast('Enter an Application ID','error');
+  if (channels.length === 0) return toast('Select at least one channel','error');
+
+  let endpoint = '', body = {app_id: appId, channels};
+
+  if (type === 'checklist') {
+    endpoint = '/admin/send-checklist';
+  } else if (type === 'status') {
+    endpoint = '/admin/send-status-update';
+    body.new_status = document.getElementById('msg-status')?.value || 'review';
+    body.note = document.getElementById('msg-note')?.value || '';
+  } else if (type === 'reminder') {
+    endpoint = '/admin/send-reminder';
+    body.missing_docs = document.getElementById('msg-missing')?.value.split('\n').filter(Boolean) || [];
+  } else {
+    toast('Custom messages — use WhatsApp directly for now','error');
+    return;
+  }
+
+  try {
+    await api(endpoint, {method:'POST', body: JSON.stringify(body)});
+    document.getElementById('msg-result').innerHTML = `<div style="color:var(--green);font-size:13px">✓ Sent via ${channels.join(', ')}</div>`;
+    toast('Message sent successfully');
+    loadRecentComms();
+  } catch(e) { toast('Error sending message','error'); }
+}
+
+async function loadRecentComms() {
+  // Show last 5 from webhook log
+  try {
+    const data = await api('/admin/webhook-log');
+    document.getElementById('recent-comms').innerHTML = data.slice(0,8).map(l => `
+      <div class="comm-item">
+        <div class="comm-channel email">📤</div>
+        <div class="comm-body">
+          <div class="comm-title">${l.event?.replace('_',' ')}</div>
+          <div class="comm-time">${l.created_at?.split('T')[0] || ''}</div>
+        </div>
+        <div class="comm-status ${l.status}">${l.status}</div>
+      </div>
+    `).join('') || '<p style="font-size:13px;color:var(--text3)">No messages sent yet.</p>';
+  } catch(e) {}
+}
+
+function quickSendMsg(appId) {
+  nav('messages');
+  document.getElementById('msg-app-id').value = appId;
+  fetchAppForMessage(appId);
+}
+
+function openSendModal() {
+  nav('messages');
+  document.getElementById('msg-app-id').value = currentAppId;
+  fetchAppForMessage(currentAppId);
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+async function exportCRM(type) {
+  try {
+    const data = await api('/admin/dashboard');
+    let csv = '';
+
+    if (type === 'full' || type === 'applications') {
+      const headers = ['App ID','Client Name','Email','Phone','Destination','Visa Type','Status','Progress %','Travel Date','Created At'];
+      const rows = data.applications.map(a => [
+        a.app_id, a.client_name, a.client_email, a.client_phone || '',
+        a.destination, a.visa_type, a.status, a.progress,
+        a.travel_date || '', a.created_at?.split('T')[0] || ''
+      ]);
+      csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    } else if (type === 'clients') {
+      const seen = new Set();
+      const clients = data.applications.filter(a => {
+        if (seen.has(a.client_email)) return false;
+        seen.add(a.client_email); return true;
+      });
+      csv = [['Name','Email','Phone','Total Applications'],...clients.map(c => [
+        c.client_name, c.client_email, c.client_phone || '',
+        data.applications.filter(a => a.client_email === c.client_email).length
+      ])].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+    }
+
+    if (!csv) { toast('No data to export','error'); return; }
+
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `mkov_${type}_export_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    toast('Export downloaded');
+  } catch(e) { toast('Export failed — check connection','error'); }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function getActiveChannels(container) {
+  return Array.from(container.querySelectorAll('.channel-btn.active')).map(b => {
+    if (b.classList.contains('wa')) return 'whatsapp';
+    if (b.classList.contains('sms')) return 'sms';
+    if (b.classList.contains('email')) return 'email';
+    return null;
+  }).filter(Boolean);
+}
+
+function toggleChannel(btn, _) {
+  btn.classList.toggle('active');
+}
+
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+function toast(msg, type='success') {
+  const el = document.getElementById('toast');
+  el.textContent = (type === 'success' ? '✓ ' : '✗ ') + msg;
+  el.className = `show ${type}`;
+  setTimeout(() => el.className = '', 3000);
+}
+
+function globalSearch(q) {
+  if (!q) return;
+  nav('applications');
+  setTimeout(() => {
+    document.querySelectorAll('#apps-table tr').forEach(row => {
+      row.style.display = row.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
+    });
+  }, 300);
+}
+
+// Init msg template
+updateMsgTemplate();
+
+// ── Passport viewer ───────────────────────────────────────────────────────────
+async function viewPassport(clientId) {
+  if (!clientId) return toast('No client ID found','error');
+  try {
+    const data = await api(`/admin/client/${clientId}/passport`);
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay show';
+    modal.style.zIndex = '200';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:680px">
+        <div class="modal-header">
+          <span class="modal-title">Passport — ${data.client_name}</span>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+        </div>
+        <div class="modal-body" style="text-align:center">
+          <img src="data:image/jpeg;base64,${data.passport_b64}"
+               onerror="this.style.display='none';document.getElementById('pdf-fallback').style.display='block'"
+               style="max-width:100%;border-radius:var(--r);border:1px solid var(--border)">
+          <div id="pdf-fallback" style="display:none;padding:20px">
+            <p style="color:var(--text3);margin-bottom:12px">PDF document — click to download</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" onclick="downloadPassport('${data.passport_b64}','${data.passport_filename}')">Download</button>
+          <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Close</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  } catch(e) {
+    toast('No passport on file for this client','error');
+  }
+}
+
+function downloadPassport(b64, filename) {
+  const link = document.createElement('a');
+  link.href = `data:application/octet-stream;base64,${b64}`;
+  link.download = filename || 'passport.jpg';
+  link.click();
+}
+</script>
 </body>
 </html>
