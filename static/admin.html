@@ -161,6 +161,7 @@ tbody tr:hover{background:var(--surface2)}
 .doc-icon{font-size:28px;margin-bottom:8px;display:block}
 .doc-name{font-size:11px;font-weight:500;color:var(--text2)}
 .doc-status{font-size:10px;color:var(--text3);margin-top:4px}
+.doc-date{font-size:9px;color:var(--text3);margin-top:2px;line-height:1.3}
 .doc-badge{position:absolute;top:8px;right:8px;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px}
 .doc-badge.verified{background:var(--green);color:#000}
 .doc-badge.missing{background:var(--red);color:white}
@@ -399,13 +400,25 @@ tbody tr:hover{background:var(--surface2)}
         <div style="display:grid;grid-template-columns:1fr 320px;gap:20px">
           <div>
             <div class="tabs">
-              <button class="tab active" onclick="switchDetailTab('docs',this)">Documents</button>
+              <button class="tab active" onclick="switchDetailTab('docs',this)">Essential Docs</button>
+              <button class="tab" onclick="switchDetailTab('travel',this)">Travel Docs</button>
               <button class="tab" onclick="switchDetailTab('activity',this)">Activity Log</button>
               <button class="tab" onclick="switchDetailTab('comms',this)">Communications</button>
               <button class="tab" onclick="switchDetailTab('notes',this)">Team Notes</button>
             </div>
             <div id="detail-tab-docs">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <p style="font-size:12px;color:var(--text3)">Passport, bank statements, visa-specific documents</p>
+                <button class="btn btn-ghost btn-sm" onclick="openAdminUploadModal(currentAppId,'essential')">+ Upload Doc</button>
+              </div>
               <div class="doc-grid" id="docs-grid"></div>
+            </div>
+            <div id="detail-tab-travel" style="display:none">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <p style="font-size:12px;color:var(--text3)">Hotel bookings, flight tickets, travel insurance, itinerary</p>
+                <button class="btn btn-ghost btn-sm" onclick="openAdminUploadModal(currentAppId,'travel')">+ Upload Doc</button>
+              </div>
+              <div class="doc-grid" id="travel-docs-grid"></div>
             </div>
             <div id="detail-tab-activity" style="display:none">
               <div id="activity-log"></div>
@@ -507,40 +520,48 @@ tbody tr:hover{background:var(--surface2)}
       <!-- SEND MESSAGE -->
       <div class="view" id="view-messages">
         <div class="page-header">
-          <div><h2>Send Message</h2><p>Contact clients via WhatsApp, SMS, or Email</p></div>
+          <div><h2>Messages</h2><p>Send and track all client communications</p></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-          <div class="card">
-            <div class="card-title">Compose Message</div>
-            <div class="form-group" style="margin-bottom:12px">
-              <label>Application ID</label>
-              <input type="text" id="msg-app-id" placeholder="VIS-2026-001" oninput="fetchAppForMessage(this.value)">
+        <div style="display:grid;grid-template-columns:280px 1fr;gap:20px;height:calc(100vh - 160px)">
+          <!-- Client list -->
+          <div class="card" style="display:flex;flex-direction:column;overflow:hidden;padding:0">
+            <div style="padding:14px;border-bottom:1px solid var(--border)">
+              <input type="text" id="msg-client-search" placeholder="Search clients..."
+                oninput="filterMsgClients(this.value)"
+                style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 12px;color:var(--text);font-size:13px;outline:none">
             </div>
-            <div id="msg-client-preview" style="display:none;background:var(--surface2);border-radius:var(--r);padding:10px;margin-bottom:12px;font-size:13px"></div>
-            <div class="form-group" style="margin-bottom:12px">
-              <label>Message Type</label>
-              <select id="msg-type" onchange="updateMsgTemplate()">
-                <option value="checklist">Send Checklist</option>
-                <option value="status">Status Update</option>
-                <option value="reminder">Document Reminder</option>
-                <option value="custom">Custom Message</option>
-              </select>
-            </div>
-            <div id="msg-type-options"></div>
-            <div class="form-group" style="margin-bottom:12px">
-              <label>Send Via</label>
-              <div class="channel-toggle">
-                <button class="channel-btn active wa" onclick="toggleChannel(this,'wa')">WhatsApp</button>
-                <button class="channel-btn sms" onclick="toggleChannel(this,'sms')">SMS</button>
-                <button class="channel-btn active email" onclick="toggleChannel(this,'email')">Email</button>
+            <div id="msg-client-list" style="flex:1;overflow-y:auto;padding:8px"></div>
+          </div>
+          <!-- Conversation -->
+          <div class="card" style="display:flex;flex-direction:column;overflow:hidden;padding:0">
+            <div id="msg-conversation-header" style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+              <div>
+                <div style="font-size:15px;font-weight:600" id="msg-conv-name">Select a client</div>
+                <div style="font-size:12px;color:var(--text3)" id="msg-conv-sub">Choose from the list to start</div>
+              </div>
+              <div style="display:flex;gap:6px" id="msg-conv-actions" style="display:none">
+                <select id="msg-type" onchange="updateMsgTemplate()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:6px 10px;color:var(--text);font-size:12px;outline:none">
+                  <option value="status">Status Update</option>
+                  <option value="reminder">Document Reminder</option>
+                  <option value="custom">Custom</option>
+                </select>
+                <button class="channel-btn active wa" onclick="toggleChannel(this,'wa')" style="font-size:11px;padding:5px 10px">WhatsApp</button>
+                <button class="channel-btn active email" onclick="toggleChannel(this,'email')" style="font-size:11px;padding:5px 10px">Email</button>
               </div>
             </div>
-            <button class="btn btn-primary" onclick="sendMessage()" style="width:100%;justify-content:center">Send Message</button>
-            <div id="msg-result" style="margin-top:12px"></div>
-          </div>
-          <div class="card">
-            <div class="card-title">Recent Communications</div>
-            <div id="recent-comms"></div>
+            <div id="msg-conv-body" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:8px">
+              <div style="text-align:center;color:var(--text3);font-size:13px;margin-top:40px">Select a client to view messages</div>
+            </div>
+            <div id="msg-compose-area" style="border-top:1px solid var(--border);padding:14px;display:none">
+              <div id="msg-type-options"></div>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <textarea id="msg-custom-text" placeholder="Type a message..."
+                  style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-size:13px;font-family:var(--font);resize:none;min-height:40px;max-height:120px;outline:none"
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}"></textarea>
+                <button class="btn btn-primary" onclick="sendMessage()" style="align-self:flex-end;padding:9px 16px">Send</button>
+              </div>
+              <div id="msg-result" style="margin-top:8px;font-size:12px"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -926,14 +947,17 @@ function nav(page) {
   const view = document.getElementById(`view-${page}`);
   if (view) view.classList.add('active');
   document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
-  event?.currentTarget?.classList.add('active');
-
-  if (page === 'dashboard') loadDashboard();
+  // Highlight the matching sidebar item
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    if (btn.getAttribute('onclick') === `nav('${page}')`) btn.classList.add('active');
+  });
+  if (page === 'dashboard')       loadDashboard();
   else if (page === 'applications') loadApplications();
-  else if (page === 'clients') loadClients();
-  else if (page === 'messages') loadRecentComms();
-  else if (page === 'packages') renderPackages();
-  else if (page === 'vfs') renderChecklists();
+  else if (page === 'clients')    loadClients();
+  else if (page === 'messages')   loadRecentComms();
+  else if (page === 'packages')   renderPackages();
+  else if (page === 'vfs')        renderChecklists();
+  else if (page === 'client-profile') loadAllClients();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -1030,15 +1054,34 @@ async function viewApp(appId) {
       </div>
     `;
 
-    // Documents grid
-    document.getElementById('docs-grid').innerHTML = data.documents.map(d => `
-      <div class="doc-card ${d.status}" onclick="handleDocAction('${appId}','${d.doc_type}','${d.status}','${d.id}')">
-        <span class="doc-icon">${docIcon(d.doc_type)}</span>
-        <div class="doc-name">${d.doc_type.replace(/_/g,' ')}</div>
-        <div class="doc-status">${d.status}</div>
-        <div class="doc-badge ${d.status}">${d.status === 'verified' ? '✓' : d.status === 'uploaded' ? '↑' : '!'}</div>
-      </div>
-    `).join('');
+    // Split documents: essential vs travel
+    const TRAVEL_TYPES = ['hotel_booking','flight_ticket','accommodation_proof','onward_ticket','itinerary','travel_plan','car_rental'];
+    const essentialDocs = data.documents.filter(d => !TRAVEL_TYPES.includes(d.doc_type));
+    const travelDocs    = data.documents.filter(d =>  TRAVEL_TYPES.includes(d.doc_type));
+
+    function docCardHTML(d) {
+      const submitted = d.uploaded_at ? d.uploaded_at.split('T')[0] : null;
+      const verified  = d.verified_at ? d.verified_at.split('T')[0] : null;
+      const dateInfo  = submitted
+        ? `<div class="doc-date">Submitted: ${submitted}</div>${verified ? `<div class="doc-date" style="color:var(--green)">Verified: ${verified}</div>` : ''}`
+        : '<div class="doc-date">Not submitted</div>';
+      return `
+        <div class="doc-card ${d.status}" onclick="handleDocAction('${appId}','${d.doc_type}','${d.status}','${d.id}')">
+          <span class="doc-icon">${docIcon(d.doc_type)}</span>
+          <div class="doc-name">${d.doc_type.replace(/_/g,' ')}</div>
+          <div class="doc-status">${d.status}</div>
+          ${dateInfo}
+          <div class="doc-badge ${d.status}">${d.status === 'verified' ? '✓' : d.status === 'uploaded' ? '↑' : '!'}</div>
+        </div>`;
+    }
+
+    document.getElementById('docs-grid').innerHTML =
+      essentialDocs.length ? essentialDocs.map(docCardHTML).join('') :
+      '<p style="color:var(--text3);font-size:13px">No essential documents yet.</p>';
+
+    document.getElementById('travel-docs-grid').innerHTML =
+      travelDocs.length ? travelDocs.map(docCardHTML).join('') :
+      '<p style="color:var(--text3);font-size:13px">No travel documents yet. Upload hotel bookings, flight tickets etc.</p>';
 
     // Activity log
     document.getElementById('activity-log').innerHTML = data.activity.map(l => `
@@ -1082,8 +1125,9 @@ function channelEmoji(ch) {
 }
 
 function switchDetailTab(tab, el) {
-  ['docs','activity','comms','notes'].forEach(t => {
-    document.getElementById(`detail-tab-${t}`).style.display = t === tab ? 'block' : 'none';
+  ['docs','travel','activity','comms','notes'].forEach(t => {
+    const el2 = document.getElementById(`detail-tab-${t}`);
+    if (el2) el2.style.display = t === tab ? 'block' : 'none';
   });
   document.querySelectorAll('#view-app-detail .tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
@@ -2023,14 +2067,320 @@ async function deleteFee(feeId, clientId) {
   } catch(e) { toast('Error','error'); }
 }
 
-// Patch nav() to load clients when switching to client-profile
-const _origNav = nav;
-function nav(page) {
-  _origNav(page);
-  if (page === 'client-profile') {
-    loadAllClients();
+// nav() handles client-profile loading above
+
+// ── Upload Doc Modal ──────────────────────────────────────────────────────────
+let _uploadAppId   = null;
+let _uploadSection = 'essential';
+
+const TRAVEL_DOC_TYPES = ['hotel_booking','flight_ticket','accommodation_proof','onward_ticket','itinerary','travel_plan','car_rental'];
+
+function openAdminUploadModal(appId, section) {
+  _uploadAppId   = appId;
+  _uploadSection = section;
+  document.getElementById('upload-modal-title').textContent =
+    section === 'travel' ? 'Upload Travel Document' : 'Upload Essential Document';
+  // Pre-filter doc type options
+  const sel = document.getElementById('upload-doc-type');
+  if (section === 'travel') {
+    sel.value = 'hotel_booking';
+  } else {
+    sel.value = 'passport';
+  }
+  document.getElementById('upload-drop-text').textContent = 'Click to select file';
+  document.getElementById('upload-doc-file').value = '';
+  openModal('admin-upload-modal');
+}
+
+function previewUploadFile(input) {
+  const file = input.files[0];
+  if (file) {
+    document.getElementById('upload-drop-text').textContent =
+      `${file.name} (${(file.size/1024).toFixed(0)} KB)`;
   }
 }
+
+async function submitAdminDocUpload() {
+  const file    = document.getElementById('upload-doc-file').files[0];
+  const docType = document.getElementById('upload-doc-type').value;
+  if (!file)    return toast('Select a file first','error');
+  if (!_uploadAppId) return toast('No application selected','error');
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('doc_type', docType);
+
+  try {
+    const r = await fetch(`${API}/admin/application/${_uploadAppId}/upload-doc`, {
+      method: 'POST',
+      headers: {'Authorization': `Bearer ${TOKEN}`},
+      body: formData
+    });
+    if (!r.ok) throw new Error();
+    closeModal('admin-upload-modal');
+    toast(`${docType.replace(/_/g,' ')} uploaded`);
+    viewApp(_uploadAppId);
+  } catch(e) { toast('Upload failed','error'); }
+}
+
+// ── handleDocAction updated — view if uploaded, verify if uploaded ────────────
+function handleDocAction(appId, docType, status, docId) {
+  if (status === 'missing') {
+    // Offer to upload
+    _uploadAppId = appId;
+    const isTravel = TRAVEL_DOC_TYPES.includes(docType);
+    _uploadSection = isTravel ? 'travel' : 'essential';
+    document.getElementById('upload-doc-type').value = docType;
+    document.getElementById('upload-drop-text').textContent = 'Click to select file';
+    document.getElementById('upload-doc-file').value = '';
+    document.getElementById('upload-modal-title').textContent = `Upload ${docType.replace(/_/g,' ')}`;
+    openModal('admin-upload-modal');
+  } else if (status === 'uploaded') {
+    // Show options: view or verify
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay show';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:360px">
+        <div class="modal-header">
+          <span class="modal-title">${docType.replace(/_/g,' ')}</span>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+        </div>
+        <div class="modal-body" style="display:flex;gap:10px;flex-direction:column">
+          <button class="btn btn-primary" onclick="viewDoc(${docId});this.closest('.modal-overlay').remove()">View Document</button>
+          <button class="btn btn-ghost" onclick="verifyDoc('${appId}','${docType}',${docId});this.closest('.modal-overlay').remove()">Mark as Verified</button>
+          <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  } else if (status === 'verified') {
+    viewDoc(parseInt(docId));
+  }
+}
+
+async function verifyDoc(appId, docType, docId) {
+  try {
+    await api(`/admin/application/${appId}/verify-doc`, {
+      method:'POST', body: JSON.stringify({doc_id: parseInt(docId), status:'verified'})
+    });
+    toast(`${docType.replace(/_/g,' ')} verified`);
+    viewApp(appId);
+  } catch(e) { toast('Error verifying','error'); }
+}
+
+// ── In-portal Messaging ───────────────────────────────────────────────────────
+let msgClients = [];
+let currentMsgClient = null;
+
+async function loadMsgClients() {
+  try {
+    const data = await api('/admin/clients');
+    msgClients = data.clients;
+    renderMsgClientList(msgClients);
+  } catch(e) { console.error(e); }
+}
+
+function filterMsgClients(q) {
+  if (!q) { renderMsgClientList(msgClients); return; }
+  renderMsgClientList(msgClients.filter(c =>
+    c.name.toLowerCase().includes(q.toLowerCase()) ||
+    c.email.toLowerCase().includes(q.toLowerCase())
+  ));
+}
+
+function renderMsgClientList(clients) {
+  const list = document.getElementById('msg-client-list');
+  if (!list) return;
+  list.innerHTML = clients.map(c => `
+    <div onclick="openMsgConversation(${c.id},'${c.name}','${c.email}','${c.phone||''}')"
+      style="padding:10px 12px;border-radius:var(--r);cursor:pointer;margin-bottom:4px;transition:background .15s;border:1px solid transparent"
+      onmouseover="this.style.background='var(--surface2)';this.style.borderColor='var(--border)'"
+      onmouseout="this.style.background='';this.style.borderColor='transparent'">
+      <div style="font-size:13px;font-weight:500">${c.name}</div>
+      <div style="font-size:11px;color:var(--text3)">${c.app_count} application${c.app_count!=1?'s':''}</div>
+    </div>
+  `).join('') || '<p style="color:var(--text3);font-size:13px;padding:8px">No clients yet</p>';
+}
+
+async function openMsgConversation(clientId, name, email, phone) {
+  currentMsgClient = {id: clientId, name, email, phone};
+  document.getElementById('msg-conv-name').textContent = name;
+  document.getElementById('msg-conv-sub').textContent = `${email} · ${phone || 'no phone'}`;
+  document.getElementById('msg-compose-area').style.display = 'block';
+  document.getElementById('msg-conv-actions').style.display = 'flex';
+
+  // Fetch their apps for context
+  const body = document.getElementById('msg-conv-body');
+  body.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:12px;padding:20px">Loading conversation history...</div>';
+
+  try {
+    const data = await api(`/admin/client/${clientId}`);
+    const apps = data.applications;
+
+    // Load comm logs across all apps
+    let allComms = [];
+    for (const app of apps.slice(0,5)) {
+      try {
+        const cl = await api(`/admin/communication-log/${app.app_id}`);
+        allComms = allComms.concat(cl.logs.map(l => ({...l, app_id: app.app_id, destination: app.destination})));
+      } catch(e) {}
+    }
+    allComms.sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+
+    if (!allComms.length) {
+      body.innerHTML = `
+        <div style="text-align:center;color:var(--text3);font-size:13px;padding:40px 20px">
+          <div style="font-size:28px;margin-bottom:8px">💬</div>
+          <p>No messages sent yet.</p>
+          <p style="font-size:12px;margin-top:4px">Send a status update, reminder or custom message below.</p>
+        </div>`;
+    } else {
+      body.innerHTML = allComms.map(c => `
+        <div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px">
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px 12px 12px 2px;padding:10px 14px;max-width:80%">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${c.message_type?.replace(/_/g,' ')} · ${c.channel} · ${c.app_id}</div>
+            <div style="font-size:13px">${c.message_content || '(message logged)'}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;padding:0 4px">
+            <span style="font-size:10px;color:var(--text3)">${c.created_at?.split('T')[0]} ${c.created_at?.split('T')[1]?.slice(0,5)||''}</span>
+            <span style="font-size:10px;padding:1px 6px;border-radius:8px;${c.sent_status==='sent'?'background:rgba(62,207,142,0.12);color:var(--green)':'background:rgba(224,84,84,0.12);color:var(--red)'}">${c.sent_status}</span>
+          </div>
+        </div>
+      `).join('');
+      body.scrollTop = body.scrollHeight;
+    }
+  } catch(e) {
+    body.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:20px">Could not load history.</div>';
+  }
+  updateMsgTemplate();
+}
+
+function updateMsgTemplate() {
+  const type = document.getElementById('msg-type')?.value;
+  const container = document.getElementById('msg-type-options');
+  if (!container) return;
+  if (type === 'status') {
+    container.innerHTML = `
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="msg-status" style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px;color:var(--text);font-size:13px;outline:none">
+          <option value="pending">Pending Documents</option>
+          <option value="docs_received">Docs Received</option>
+          <option value="review">Under Review</option>
+          <option value="submitted">Submitted to Embassy</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <input type="text" id="msg-app-id" placeholder="App ID (VIS-...)"
+          style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:13px;outline:none">
+      </div>`;
+  } else if (type === 'reminder') {
+    container.innerHTML = `
+      <input type="text" id="msg-missing" placeholder="Missing docs e.g: Passport, Bank Statement"
+        style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:13px;outline:none;margin-bottom:8px">`;
+  } else {
+    container.innerHTML = '';
+  }
+}
+
+async function sendMessage() {
+  if (!currentMsgClient) {
+    // Fallback for old send panel
+    toast('Select a client first','error');
+    return;
+  }
+  const type     = document.getElementById('msg-type')?.value || 'custom';
+  const text     = document.getElementById('msg-custom-text')?.value.trim();
+  const channels = getActiveChannels(document.getElementById('view-messages'));
+
+  if (!channels.length) return toast('Select at least one channel','error');
+
+  let endpoint = '', body = {channels};
+
+  if (type === 'status') {
+    const appId = document.getElementById('msg-app-id')?.value.trim();
+    if (!appId) return toast('Enter Application ID for status update','error');
+    endpoint = '/admin/send-status-update';
+    body = {...body, app_id: appId,
+      new_status: document.getElementById('msg-status')?.value || 'review',
+      note: text || ''};
+  } else if (type === 'reminder') {
+    const appId = document.getElementById('msg-app-id')?.value.trim();
+    if (!appId) return toast('Enter Application ID for reminder','error');
+    const missing = document.getElementById('msg-missing')?.value.trim();
+    endpoint = '/admin/send-reminder';
+    body = {...body, app_id: appId,
+      missing_docs: missing ? missing.split(',').map(d=>d.trim()) : []};
+  } else {
+    // Custom — just log it locally for now (no backend endpoint for free-text)
+    if (!text) return toast('Type a message first','error');
+    // Show it in the conversation
+    const convBody = document.getElementById('msg-conv-body');
+    const msgDiv = document.createElement('div');
+    msgDiv.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end';
+    msgDiv.innerHTML = `
+      <div style="background:var(--teal);border-radius:12px 12px 2px 12px;padding:10px 14px;max-width:80%">
+        <div style="font-size:13px;color:#000">${text}</div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px;padding:0 4px">
+        ${new Date().toLocaleDateString()} · ${channels.join(', ')}
+      </div>`;
+    convBody.appendChild(msgDiv);
+    convBody.scrollTop = convBody.scrollHeight;
+    document.getElementById('msg-custom-text').value = '';
+    toast('Message composed — connect WhatsApp/email to send');
+    return;
+  }
+
+  const resultDiv = document.getElementById('msg-result');
+  resultDiv.textContent = 'Sending...';
+  resultDiv.style.color = 'var(--text3)';
+
+  try {
+    await api(endpoint, {method:'POST', body: JSON.stringify(body)});
+    resultDiv.textContent = `✓ Sent via ${channels.join(', ')}`;
+    resultDiv.style.color = 'var(--green)';
+    document.getElementById('msg-custom-text').value = '';
+    toast('Sent');
+    // Refresh conversation
+    if (currentMsgClient) {
+      setTimeout(() => openMsgConversation(
+        currentMsgClient.id, currentMsgClient.name,
+        currentMsgClient.email, currentMsgClient.phone), 500);
+    }
+  } catch(e) {
+    resultDiv.textContent = '✗ Send failed — check WhatsApp/email config';
+    resultDiv.style.color = 'var(--red)';
+    toast('Send failed','error');
+  }
+}
+
+// Load msg clients when navigating to messages
+const _origLoadRecentComms = loadRecentComms;
+function loadRecentComms() {
+  loadMsgClients();
+}
+
+// ── loadClients - use real /admin/clients endpoint ────────────────────────────
+async function loadClients() {
+  try {
+    const data = await api('/admin/clients');
+    document.getElementById('clients-table').innerHTML = data.clients.map(c => `
+      <tr>
+        <td><strong>${c.name}</strong></td>
+        <td>${c.email}</td>
+        <td>${c.phone || '—'}</td>
+        <td>${c.app_count}</td>
+        <td>${c.created_at?.split('T')[0] || '—'}</td>
+        <td style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="nav('client-profile');setTimeout(()=>loadClientProfile(${c.id}),100)">Profile</button>
+          <button class="btn btn-ghost btn-sm" onclick="nav('messages');setTimeout(()=>openMsgConversation(${c.id},'${c.name}','${c.email}','${c.phone||''}'),300)">Message</button>
+        </td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text3)">No clients yet</td></tr>';
+  } catch(e) { console.error(e); }
+}
+
+// Init msg template
+updateMsgTemplate();
 
 // Init msg template
 updateMsgTemplate();
@@ -2076,5 +2426,46 @@ function downloadPassport(b64, filename) {
   link.click();
 }
 </script>
+
+<!-- Admin Upload Doc Modal -->
+<div class="modal-overlay" id="admin-upload-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <span class="modal-title" id="upload-modal-title">Upload Document</span>
+      <button class="modal-close" onclick="closeModal('admin-upload-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Document Type</label>
+        <select id="upload-doc-type">
+          <option value="passport">Passport</option>
+          <option value="photo">Photo</option>
+          <option value="bank_statement">Bank Statement</option>
+          <option value="visa_copy">Visa Copy (Approved)</option>
+          <option value="employment_letter">Employment Letter</option>
+          <option value="invitation_letter">Invitation Letter</option>
+          <option value="insurance">Insurance</option>
+          <option value="hotel_booking">Hotel Booking</option>
+          <option value="flight_ticket">Flight Ticket</option>
+          <option value="itinerary">Itinerary</option>
+          <option value="accommodation_proof">Accommodation Proof</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>File (PDF, JPG, PNG)</label>
+        <div class="file-drop" onclick="document.getElementById('upload-doc-file').click()">
+          <input type="file" id="upload-doc-file" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="previewUploadFile(this)">
+          <p id="upload-drop-text">Click to select file</p>
+          <span>PDF, JPG, PNG — max 10MB</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('admin-upload-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAdminDocUpload()">Upload</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
