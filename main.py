@@ -532,3 +532,384 @@ def client_mark_read(client=Depends(require_client)):
     conn.execute("UPDATE notifications SET read=1 WHERE client_id=?", (client_row["id"],))
     conn.commit(); conn.close()
     return {"status": "all marked read"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NEW ENDPOINTS — Client Management, Fee Structure, Document Upload
+# ══════════════════════════════════════════════════════════════════════════════
+
+class UpdateClientRequest(BaseModel):
+    name:     Optional[str] = None
+    phone:    Optional[str] = None
+    email:    Optional[str] = None
+    password: Optional[str] = None
+
+class FeeStructureRequest(BaseModel):
+    client_id:       int
+    label:           str            # "USA Tourist Standard"
+    base_price:      float
+    discount_type:   str            # "percentage" | "fixed" | "none"
+    discount_value:  float = 0
+    reason:          Optional[str] = ""   # "Frequent flyer", "Referral"
+    app_id:          Optional[str] = None # tie to specific application
+
+class UpdateApplicationRequest(BaseModel):
+    destination:   Optional[str] = None
+    visa_type:     Optional[str] = None
+    travel_date:   Optional[str] = None
+    duration_days: Optional[int] = None
+    group_size:    Optional[int] = None
+    embassy_ref:   Optional[str] = None
+    notes:         Optional[str] = None
+    checklist_id:  Optional[int] = None
+
+
+# ── GET all clients (proper endpoint) ────────────────────────────────────────
+@app.get("/admin/clients")
+def admin_get_clients(admin=Depends(require_admin)):
+    """Get all clients with their application counts."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT c.id, c.name, c.email, c.phone, c.created_at,
+               c.passport_filename,
+               COUNT(a.id) as app_count,
+               MAX(a.created_at) as last_app
+        FROM clients c
+        LEFT JOIN applications a ON a.client_id = c.id
+        GROUP BY c.id
+        ORDER BY c.created_at DESC
+    """).fetchall()
+    conn.close()
+    return {"clients": [dict(r) for r in rows]}
+
+
+# ── GET single client with full details ───────────────────────────────────────
+@app.get("/admin/client/{client_id}")
+def admin_get_client(client_id: int, admin=Depends(require_admin)):
+    """Get full client profile with applications, discounts, documents."""
+    conn = get_db()
+    client = conn.execute(
+        "SELECT id, name, email, phone, created_at, passport_filename FROM clients WHERE id=?",
+        (client_id,)
+    ).fetchone()
+    if not client:
+        conn.close()
+        raise HTTPException(404, "Client not found")
+
+    apps = conn.execute(
+        "SELECT * FROM applications WHERE client_id=? ORDER BY created_at DESC",
+        (client_id,)
+    ).fetchall()
+
+    discounts = conn.execute(
+        "SELECT * FROM client_discounts WHERE client_id=? AND active=1 ORDER BY created_at DESC",
+        (client_id,)
+    ).fetchall()
+
+    docs = conn.execute("""
+        SELECT d.*, a.destination, a.visa_type
+        FROM documents d
+        JOIN applications a ON a.app_id = d.app_id
+        WHERE a.client_id = ?
+        ORDER BY d.uploaded_at DESC
+    """, (client_id,)).fetchall()
+
+    conn.close()
+    return {
+        "client":    dict(client),
+        "applications": [dict(a) for a in apps],
+        "discounts": [dict(d) for d in discounts],
+        "documents": [dict(d) for d in docs],
+    }
+
+
+# ── UPDATE client details ─────────────────────────────────────────────────────
+@app.put("/admin/client/{client_id}")
+def admin_update_client(client_id: int, data: UpdateClientRequest, admin=Depends(require_admin)):
+    """Edit client name, phone, email, or reset password."""
+    conn = get_db()
+    client = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+    if not client:
+        conn.close()
+        raise HTTPException(404, "Client not found")
+
+    updates = []
+    values  = []
+    if data.name:
+        updates.append("name=?");     values.append(data.name)
+    if data.phone:
+        updates.append("phone=?");    values.append(data.phone)
+    if data.email:
+        updates.append("email=?");    values.append(data.email)
+    if data.password:
+        updates.append("password=?"); values.append(hash_password(data.password))
+
+    if updates:
+        values.append(client_id)
+        conn.execute(f"UPDATE clients SET {', '.join(updates)} WHERE id=?", values)
+        conn.commit()
+
+    conn.close()
+    return {"status": "updated"}
+
+
+# ── UPLOAD client passport (base64) ──────────────────────────────────────────
+@app.post("/admin/client/{client_id}/upload-passport")
+async def admin_upload_passport(
+    client_id: int,
+    file: UploadFile = File(...),
+    admin=Depends(require_admin)
+):
+    """Upload passport scan and store as base64 in DB."""
+    conn = get_db()
+    client = conn.execute("SELECT id FROM clients WHERE id=?", (client_id,)).fetchone()
+    if not client:
+        conn.close()
+        raise HTTPException(404, "Client not found")
+
+    # Read file and encode as base64
+    import base64
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:   # 10MB limit
+        conn.close()
+        raise HTTPException(400, "File too large (max 10MB)")
+
+    b64 = base64.b64encode(content).decode()
+    conn.execute(
+        "UPDATE clients SET passport_b64=?, passport_filename=? WHERE id=?",
+        (b64, file.filename, client_id)
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "uploaded", "filename": file.filename}
+
+
+# ── UPLOAD document for specific application ──────────────────────────────────
+@app.post("/admin/application/{app_id}/upload-doc")
+async def admin_upload_doc(
+    app_id:   str,
+    doc_type: str = Form(...),
+    file:     UploadFile = File(...),
+    admin=Depends(require_admin)
+):
+    """Admin uploads a document for a client (e.g. approved visa copy)."""
+    import base64
+    conn = get_db()
+    app = conn.execute("SELECT * FROM applications WHERE app_id=?", (app_id,)).fetchone()
+    if not app:
+        conn.close()
+        raise HTTPException(404, "Application not found")
+
+    content = await file.read()
+    b64     = base64.b64encode(content).decode()
+    now     = datetime.now().isoformat()
+
+    # Check if doc_type row exists — update or insert
+    existing = conn.execute(
+        "SELECT id FROM documents WHERE app_id=? AND doc_type=?", (app_id, doc_type)
+    ).fetchone()
+
+    if existing:
+        conn.execute("""
+            UPDATE documents
+            SET file_name=?, file_path=?, status='uploaded', uploaded_at=?
+            WHERE app_id=? AND doc_type=?
+        """, (file.filename, b64, now, app_id, doc_type))
+    else:
+        conn.execute("""
+            INSERT INTO documents (app_id, doc_type, file_name, file_path, status, uploaded_at)
+            VALUES (?,?,?,?,?,?)
+        """, (app_id, doc_type, file.filename, b64, "uploaded", now))
+
+    conn.execute(
+        "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+        (app_id, f"admin:{admin['name']}", "Document uploaded",
+         f"Admin uploaded {doc_type}: {file.filename}")
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "uploaded", "doc_type": doc_type, "filename": file.filename}
+
+
+# ── GET document as base64 (admin) ───────────────────────────────────────────
+@app.get("/admin/document/{doc_id}")
+def admin_get_document(doc_id: int, admin=Depends(require_admin)):
+    """Return document as base64 for viewing in browser."""
+    conn = get_db()
+    doc = conn.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
+    conn.close()
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if not doc["file_path"]:
+        raise HTTPException(404, "No file uploaded for this document")
+    return {
+        "doc_type":  doc["doc_type"],
+        "file_name": doc["file_name"],
+        "file_b64":  doc["file_path"],  # stored as b64 in file_path column
+        "status":    doc["status"],
+    }
+
+
+# ── UPDATE application details ────────────────────────────────────────────────
+@app.put("/admin/application/{app_id}")
+def admin_update_application(app_id: str, data: UpdateApplicationRequest, admin=Depends(require_admin)):
+    """Edit destination, dates, notes, embassy ref etc."""
+    conn = get_db()
+    app = conn.execute("SELECT * FROM applications WHERE app_id=?", (app_id,)).fetchone()
+    if not app:
+        conn.close()
+        raise HTTPException(404, "Application not found")
+
+    updates = ["updated_at=CURRENT_TIMESTAMP"]
+    values  = []
+    fields  = {
+        "destination":   data.destination,
+        "visa_type":     data.visa_type,
+        "travel_date":   data.travel_date,
+        "duration_days": data.duration_days,
+        "group_size":    data.group_size,
+        "embassy_ref":   data.embassy_ref,
+        "notes":         data.notes,
+        "checklist_id":  data.checklist_id,
+    }
+    for col, val in fields.items():
+        if val is not None:
+            updates.append(f"{col}=?")
+            values.append(val)
+
+    if len(updates) > 1:
+        values.append(app_id)
+        conn.execute(f"UPDATE applications SET {', '.join(updates)} WHERE app_id=?", values)
+        conn.execute(
+            "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+            (app_id, f"admin:{admin['name']}", "Application updated",
+             f"Fields updated: {', '.join(k for k,v in fields.items() if v is not None)}")
+        )
+        conn.commit()
+
+    conn.close()
+    return {"status": "updated"}
+
+
+# ── SET fee structure for client ──────────────────────────────────────────────
+@app.post("/admin/client-fee")
+def admin_set_client_fee(data: FeeStructureRequest, admin=Depends(require_admin)):
+    """
+    Set custom fee/discount for a specific client.
+    discount_type: 'percentage' = e.g. 10% off
+                   'fixed'      = e.g. INR 500 off
+                   'none'       = full price
+    """
+    conn = get_db()
+    client = conn.execute("SELECT id, name FROM clients WHERE id=?", (data.client_id,)).fetchone()
+    if not client:
+        conn.close()
+        raise HTTPException(404, "Client not found")
+
+    # Calculate final price
+    if data.discount_type == "percentage":
+        final = data.base_price * (1 - data.discount_value / 100)
+    elif data.discount_type == "fixed":
+        final = max(0, data.base_price - data.discount_value)
+    else:
+        final = data.base_price
+
+    conn.execute("""
+        INSERT INTO client_discounts
+        (client_id, checklist_id, discount_type, discount_value, reason, created_by)
+        VALUES (?,?,?,?,?,?)
+    """, (
+        data.client_id,
+        None,
+        data.discount_type,
+        data.discount_value,
+        f"{data.label} | Base: {data.base_price} | Final: {final} | {data.reason}",
+        admin["name"]
+    ))
+
+    # If tied to an application, log it
+    if data.app_id:
+        conn.execute(
+            "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+            (data.app_id, f"admin:{admin['name']}", "Fee updated",
+             f"{data.label}: ₹{data.base_price} → ₹{final:.0f} ({data.discount_type}: {data.discount_value})")
+        )
+
+    conn.commit()
+    conn.close()
+    return {
+        "status":      "set",
+        "base_price":  data.base_price,
+        "final_price": final,
+        "client_name": client["name"]
+    }
+
+
+# ── GET fee structure for client ──────────────────────────────────────────────
+@app.get("/admin/client-fee/{client_id}")
+def admin_get_client_fee(client_id: int, admin=Depends(require_admin)):
+    """Get all fee entries for a client."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT * FROM client_discounts
+        WHERE client_id=? AND active=1
+        ORDER BY created_at DESC
+    """, (client_id,)).fetchall()
+    conn.close()
+    return {"fees": [dict(r) for r in rows]}
+
+
+# ── DELETE (deactivate) a fee entry ──────────────────────────────────────────
+@app.delete("/admin/client-fee/{fee_id}")
+def admin_delete_client_fee(fee_id: int, admin=Depends(require_admin)):
+    conn = get_db()
+    conn.execute("UPDATE client_discounts SET active=0 WHERE id=?", (fee_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "removed"}
+
+
+# ── Add document type to an application checklist ────────────────────────────
+@app.post("/admin/application/{app_id}/add-doc-type")
+def admin_add_doc_type(app_id: str, data: dict, admin=Depends(require_admin)):
+    """Add a new document slot to an application."""
+    doc_type = data.get("doc_type", "").strip().lower().replace(" ", "_")
+    if not doc_type:
+        raise HTTPException(400, "doc_type required")
+    conn = get_db()
+    existing = conn.execute(
+        "SELECT id FROM documents WHERE app_id=? AND doc_type=?", (app_id, doc_type)
+    ).fetchone()
+    if existing:
+        conn.close()
+        return {"status": "already exists"}
+    conn.execute(
+        "INSERT INTO documents (app_id, doc_type, status) VALUES (?,?,?)",
+        (app_id, doc_type, "missing")
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "added", "doc_type": doc_type}
+
+
+# ── DELETE client ─────────────────────────────────────────────────────────────
+@app.delete("/admin/client/{client_id}")
+def admin_delete_client(client_id: int, admin=Depends(require_admin)):
+    """Remove a client and all their data."""
+    conn = get_db()
+    client = conn.execute("SELECT name FROM clients WHERE id=?", (client_id,)).fetchone()
+    if not client:
+        conn.close()
+        raise HTTPException(404, "Client not found")
+    # Cascade delete
+    apps = conn.execute("SELECT app_id FROM applications WHERE client_id=?", (client_id,)).fetchall()
+    for a in apps:
+        conn.execute("DELETE FROM documents WHERE app_id=?", (a["app_id"],))
+        conn.execute("DELETE FROM activity_log WHERE app_id=?", (a["app_id"],))
+        conn.execute("DELETE FROM notifications WHERE app_id=?", (a["app_id"],))
+    conn.execute("DELETE FROM applications WHERE client_id=?", (client_id,))
+    conn.execute("DELETE FROM client_discounts WHERE client_id=?", (client_id,))
+    conn.execute("DELETE FROM clients WHERE id=?", (client_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted", "client": client["name"]}
