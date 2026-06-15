@@ -299,6 +299,10 @@ tbody tr:hover{background:var(--surface2)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         Send Message
       </button>
+      <button class="nav-item" onclick="nav('client-profile')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        Client Profile
+      </button>
       <button class="nav-item" onclick="nav('export')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export CRM
@@ -537,6 +541,32 @@ tbody tr:hover{background:var(--surface2)}
           <div class="card">
             <div class="card-title">Recent Communications</div>
             <div id="recent-comms"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CLIENT PROFILE -->
+      <div class="view" id="view-client-profile">
+        <div class="page-header">
+          <div><h2>Client Profile</h2><p>Full client details, documents, fee structure and history</p></div>
+        </div>
+        <div style="display:grid;grid-template-columns:320px 1fr;gap:20px">
+          <!-- Left: search + client list -->
+          <div>
+            <div class="card" style="margin-bottom:16px">
+              <div class="card-title">Find Client</div>
+              <input type="text" id="cp-search" placeholder="Search by name or email..." oninput="searchClients(this.value)"
+                style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-size:13px;outline:none">
+              <div id="cp-client-list" style="margin-top:12px"></div>
+            </div>
+            <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="openModal('new-client-modal')">+ New Client</button>
+          </div>
+          <!-- Right: client detail panel -->
+          <div id="cp-detail-panel">
+            <div class="card" style="text-align:center;padding:40px;color:var(--text3)">
+              <div style="font-size:40px;margin-bottom:12px">👤</div>
+              <p>Select a client from the list to view their profile</p>
+            </div>
           </div>
         </div>
       </div>
@@ -841,7 +871,7 @@ tbody tr:hover{background:var(--surface2)}
 <div id="toast"></div>
 
 <script>
-const API = 'https://arya-v1-0-0.onrender.com'; // UPDATE THIS TO YOUR VISA SYSTEM URL
+const API = 'https://visa-automation-3hgo.onrender.com';
 let TOKEN = '';
 let currentAppId = '';
 let editingChecklistId = null;
@@ -886,7 +916,7 @@ function api(path, opts={}) {
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 const PAGE_TITLES = {
-  dashboard:'Dashboard', applications:'Applications', clients:'Clients',
+  'client-profile':'Client Profile', dashboard:'Dashboard', applications:'Applications', clients:'Clients',
   vfs:'VFS Checklists', packages:'Packages', messages:'Send Message', export:'Export CRM'
 };
 
@@ -1580,6 +1610,426 @@ function globalSearch(q) {
       row.style.display = row.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
     });
   }, 300);
+}
+
+
+// ── Client Profile ────────────────────────────────────────────────────────────
+let allClients = [];
+let currentClientId = null;
+
+async function loadAllClients() {
+  try {
+    const data = await api('/admin/clients');
+    allClients = data.clients;
+    renderClientList(allClients);
+  } catch(e) { console.error(e); }
+}
+
+function searchClients(q) {
+  if (!q) { renderClientList(allClients); return; }
+  const filtered = allClients.filter(c =>
+    c.name.toLowerCase().includes(q.toLowerCase()) ||
+    c.email.toLowerCase().includes(q.toLowerCase()) ||
+    (c.phone || '').includes(q)
+  );
+  renderClientList(filtered);
+}
+
+function renderClientList(clients) {
+  const list = document.getElementById('cp-client-list');
+  if (!list) return;
+  if (!clients.length) {
+    list.innerHTML = '<p style="color:var(--text3);font-size:13px">No clients found.</p>';
+    return;
+  }
+  list.innerHTML = clients.map(c => `
+    <div onclick="loadClientProfile(${c.id})"
+         style="padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px;cursor:pointer;transition:all .15s"
+         onmouseover="this.style.borderColor='var(--teal)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div style="font-size:13px;font-weight:600">${c.name}</div>
+      <div style="font-size:11px;color:var(--text3)">${c.email} · ${c.app_count} app${c.app_count!=1?'s':''}</div>
+      ${c.passport_filename ? '<div style="font-size:10px;color:var(--green);margin-top:2px">✓ Passport on file</div>' : '<div style="font-size:10px;color:var(--red);margin-top:2px">No passport</div>'}
+    </div>
+  `).join('');
+}
+
+async function loadClientProfile(clientId) {
+  currentClientId = clientId;
+  const panel = document.getElementById('cp-detail-panel');
+  panel.innerHTML = '<div class="card" style="text-align:center;padding:24px"><div class="spinner"></div></div>';
+
+  try {
+    const [profileData, feeData] = await Promise.all([
+      api(`/admin/client/${clientId}`),
+      api(`/admin/client-fee/${clientId}`)
+    ]);
+    const c = profileData.client;
+    const apps = profileData.applications;
+    const docs = profileData.documents;
+    const fees = feeData.fees;
+
+    panel.innerHTML = `
+      <!-- Client Header -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+          <div style="display:flex;align-items:center;gap:14px">
+            <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,var(--navy),var(--teal));display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:white;flex-shrink:0">${c.name[0]}</div>
+            <div>
+              <div style="font-size:18px;font-weight:700" id="cp-name-display">${c.name}</div>
+              <div style="font-size:13px;color:var(--text3)">${c.email} · ${c.phone || 'No phone'}</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:2px">Client since ${c.created_at?.split('T')[0]}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="openEditClientModal(${c.id},'${c.name}','${c.email}','${c.phone||''}')">Edit Details</button>
+            <button class="btn btn-ghost btn-sm" onclick="window.open('https://wa.me/${(c.phone||'').replace(/\D/g,'')}')">WhatsApp</button>
+            <button class="btn btn-ghost btn-sm" onclick="window.open('mailto:${c.email}')">Email</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteClient(${c.id},'${c.name}')">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Passport -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">Passport</div>
+        ${c.passport_filename
+          ? `<div style="display:flex;align-items:center;justify-content:space-between">
+               <div>
+                 <div style="font-size:13px;font-weight:500">📘 ${c.passport_filename}</div>
+                 <div style="font-size:11px;color:var(--green);margin-top:2px">✓ Passport on file</div>
+               </div>
+               <div style="display:flex;gap:8px">
+                 <button class="btn btn-ghost btn-sm" onclick="viewPassport(${c.id})">View</button>
+                 <button class="btn btn-ghost btn-sm" onclick="document.getElementById('passport-replace-${c.id}').click()">Replace</button>
+                 <input type="file" id="passport-replace-${c.id}" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="uploadPassportDirect(${c.id},this)">
+               </div>
+             </div>`
+          : `<div>
+               <p style="font-size:13px;color:var(--text3);margin-bottom:12px">No passport on file</p>
+               <label class="btn btn-primary btn-sm" style="cursor:pointer">
+                 Upload Passport
+                 <input type="file" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="uploadPassportDirect(${c.id},this)">
+               </label>
+             </div>`
+        }
+      </div>
+
+      <!-- Fee Structure -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div class="card-title" style="margin:0">Fee Structure</div>
+          <button class="btn btn-primary btn-sm" onclick="openFeeModal(${c.id},'${c.name}')">+ Set Fee</button>
+        </div>
+        ${fees.length ? `
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Label / Notes</th><th>Discount</th><th>Set By</th><th>Date</th><th></th></tr></thead>
+              <tbody>
+                ${fees.map(f => `
+                  <tr>
+                    <td style="font-size:12px">${f.reason || '—'}</td>
+                    <td><span style="color:var(--green);font-weight:600">${f.discount_type} ${f.discount_value}</span></td>
+                    <td style="font-size:12px;color:var(--text3)">${f.created_by}</td>
+                    <td style="font-size:11px;color:var(--text3)">${f.created_at?.split('T')[0]}</td>
+                    <td><button class="btn btn-danger btn-sm" onclick="deleteFee(${f.id},${c.id})">Remove</button></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>` : '<p style="font-size:13px;color:var(--text3)">No custom fees. Default pricing applies.</p>'}
+      </div>
+
+      <!-- Applications -->
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div class="card-title" style="margin:0">Applications (${apps.length})</div>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('na-email').value='${c.email}';openModal('new-app-modal')">+ New App</button>
+        </div>
+        ${apps.length ? `
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>App ID</th><th>Destination</th><th>Type</th><th>Status</th><th>Travel Date</th><th></th></tr></thead>
+              <tbody>
+                ${apps.map(a => `
+                  <tr>
+                    <td><code style="color:var(--teal);font-family:var(--mono);font-size:12px">${a.app_id}</code></td>
+                    <td>${a.destination}</td>
+                    <td style="text-transform:capitalize">${a.visa_type}</td>
+                    <td><span class="status status-${a.status}">${a.status.replace('_',' ')}</span></td>
+                    <td style="font-size:12px">${a.travel_date || '—'}</td>
+                    <td><button class="btn btn-ghost btn-sm" onclick="viewApp('${a.app_id}')">Open</button></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>` : '<p style="font-size:13px;color:var(--text3)">No applications yet.</p>'}
+      </div>
+
+      <!-- Documents -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div class="card-title" style="margin:0">Documents (${docs.length})</div>
+        </div>
+        ${docs.length ? `
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Document</th><th>Application</th><th>Status</th><th>Uploaded</th><th></th></tr></thead>
+              <tbody>
+                ${docs.map(d => `
+                  <tr>
+                    <td style="text-transform:capitalize">${d.doc_type.replace(/_/g,' ')}</td>
+                    <td style="font-size:12px;color:var(--text3)">${d.app_id}</td>
+                    <td><span class="status status-${d.status === 'verified' ? 'approved' : d.status === 'uploaded' ? 'docs_received' : 'pending'}">${d.status}</span></td>
+                    <td style="font-size:11px;color:var(--text3)">${d.uploaded_at?.split('T')[0] || '—'}</td>
+                    <td>${d.file_path ? `<button class="btn btn-ghost btn-sm" onclick="viewDoc(${d.id})">View</button>` : '—'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>` : '<p style="font-size:13px;color:var(--text3)">No documents uploaded yet.</p>'}
+      </div>
+    `;
+  } catch(e) {
+    panel.innerHTML = '<div class="card"><p style="color:var(--red)">Failed to load client profile.</p></div>';
+    console.error(e);
+  }
+}
+
+// ── Edit client modal ─────────────────────────────────────────────────────────
+function openEditClientModal(id, name, email, phone) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay show';
+  modal.id = 'edit-client-modal';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:460px">
+      <div class="modal-header">
+        <span class="modal-title">Edit Client — ${name}</span>
+        <button class="modal-close" onclick="document.getElementById('edit-client-modal').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-group"><label>Full Name</label><input type="text" id="ec-name" value="${name}"></div>
+          <div class="form-group"><label>Email</label><input type="email" id="ec-email" value="${email}"></div>
+          <div class="form-group"><label>Phone</label><input type="tel" id="ec-phone" value="${phone}"></div>
+          <div class="form-group"><label>Reset Password (leave blank to keep)</label><input type="text" id="ec-password" placeholder="New password"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="document.getElementById('edit-client-modal').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveClientEdit(${id})">Save Changes</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function saveClientEdit(clientId) {
+  const body = {
+    name:     document.getElementById('ec-name').value.trim() || null,
+    email:    document.getElementById('ec-email').value.trim() || null,
+    phone:    document.getElementById('ec-phone').value.trim() || null,
+    password: document.getElementById('ec-password').value.trim() || null,
+  };
+  try {
+    await api(`/admin/client/${clientId}`, {method:'PUT', body: JSON.stringify(body)});
+    document.getElementById('edit-client-modal').remove();
+    toast('Client updated');
+    loadAllClients();
+    loadClientProfile(clientId);
+  } catch(e) { toast('Error updating client','error'); }
+}
+
+async function deleteClient(clientId, name) {
+  if (!confirm(`Delete ${name} and ALL their data? This cannot be undone.`)) return;
+  try {
+    await api(`/admin/client/${clientId}`, {method:'DELETE'});
+    toast(`${name} deleted`);
+    currentClientId = null;
+    document.getElementById('cp-detail-panel').innerHTML = '<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><p>Client deleted.</p></div>';
+    loadAllClients();
+  } catch(e) { toast('Error deleting client','error'); }
+}
+
+// ── Passport upload ───────────────────────────────────────────────────────────
+async function uploadPassportDirect(clientId, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const r = await fetch(`${API}/admin/client/${clientId}/upload-passport`, {
+      method: 'POST',
+      headers: {'Authorization': `Bearer ${TOKEN}`},
+      body: formData
+    });
+    if (!r.ok) throw new Error();
+    toast('Passport uploaded');
+    loadClientProfile(clientId);
+    loadAllClients();
+  } catch(e) { toast('Upload failed','error'); }
+}
+
+// ── View document ─────────────────────────────────────────────────────────────
+async function viewDoc(docId) {
+  try {
+    const data = await api(`/admin/document/${docId}`);
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay show';
+    modal.style.zIndex = '200';
+    const ext = (data.file_name || '').split('.').pop().toLowerCase();
+    const isPdf = ext === 'pdf';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:700px">
+        <div class="modal-header">
+          <span class="modal-title">${data.doc_type.replace(/_/g,' ')} — ${data.file_name || ''}</span>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+        </div>
+        <div class="modal-body" style="text-align:center">
+          ${isPdf
+            ? `<iframe src="data:application/pdf;base64,${data.file_b64}" style="width:100%;height:480px;border:none;border-radius:var(--r)"></iframe>`
+            : `<img src="data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${data.file_b64}" style="max-width:100%;border-radius:var(--r)">`
+          }
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" onclick="downloadDoc('${data.file_b64}','${data.file_name}','${ext}')">Download</button>
+          <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Close</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  } catch(e) { toast('Document not available','error'); }
+}
+
+function downloadDoc(b64, filename, ext) {
+  const mime = ext === 'pdf' ? 'application/pdf' : `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+  const link = document.createElement('a');
+  link.href = `data:${mime};base64,${b64}`;
+  link.download = filename || 'document';
+  link.click();
+}
+
+// ── Fee modal ─────────────────────────────────────────────────────────────────
+function openFeeModal(clientId, clientName) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay show';
+  modal.id = 'fee-modal';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:460px">
+      <div class="modal-header">
+        <span class="modal-title">Set Fee — ${clientName}</span>
+        <button class="modal-close" onclick="document.getElementById('fee-modal').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Label / Service</label>
+            <input type="text" id="fee-label" placeholder="e.g. UAE Tourist Visa">
+          </div>
+          <div class="form-group">
+            <label>Base Price (₹)</label>
+            <input type="number" id="fee-base" placeholder="5000" oninput="recalcFee()">
+          </div>
+          <div class="form-group">
+            <label>Discount Type</label>
+            <select id="fee-type" onchange="recalcFee()">
+              <option value="none">No Discount</option>
+              <option value="percentage">Percentage (%)</option>
+              <option value="fixed">Fixed Amount (₹)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Discount Value</label>
+            <input type="number" id="fee-discount" placeholder="0" oninput="recalcFee()">
+          </div>
+          <div id="fee-calc" style="background:var(--surface2);border-radius:var(--r);padding:12px;font-size:13px;display:none">
+            <div style="display:flex;justify-content:space-between">
+              <span style="color:var(--text3)">Base Price</span><span id="fc-base">—</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:4px">
+              <span style="color:var(--text3)">Discount</span><span id="fc-disc" style="color:var(--red)">—</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-weight:700">
+              <span>Final Price</span><span id="fc-final" style="color:var(--green)">—</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Reason (internal note)</label>
+            <input type="text" id="fee-reason" placeholder="e.g. Frequent flyer, Referral, Group booking">
+          </div>
+          <div class="form-group">
+            <label>Link to Application (optional)</label>
+            <input type="text" id="fee-app-id" placeholder="VIS-2026-001">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="document.getElementById('fee-modal').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveFee(${clientId})">Save Fee</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function recalcFee() {
+  const base     = parseFloat(document.getElementById('fee-base').value) || 0;
+  const type     = document.getElementById('fee-type').value;
+  const discount = parseFloat(document.getElementById('fee-discount').value) || 0;
+  const calc     = document.getElementById('fee-calc');
+  if (!base) { calc.style.display = 'none'; return; }
+  calc.style.display = 'block';
+  let final = base;
+  let discStr = '—';
+  if (type === 'percentage' && discount) {
+    final = base * (1 - discount/100);
+    discStr = `-${discount}% (₹${(base - final).toFixed(0)})`;
+  } else if (type === 'fixed' && discount) {
+    final = Math.max(0, base - discount);
+    discStr = `-₹${discount}`;
+  }
+  document.getElementById('fc-base').textContent  = `₹${base.toLocaleString('en-IN')}`;
+  document.getElementById('fc-disc').textContent  = discStr;
+  document.getElementById('fc-final').textContent = `₹${final.toLocaleString('en-IN')}`;
+}
+
+async function saveFee(clientId) {
+  const label    = document.getElementById('fee-label').value.trim();
+  const base     = parseFloat(document.getElementById('fee-base').value) || 0;
+  const type     = document.getElementById('fee-type').value;
+  const discount = parseFloat(document.getElementById('fee-discount').value) || 0;
+  const reason   = document.getElementById('fee-reason').value.trim();
+  const appId    = document.getElementById('fee-app-id').value.trim();
+  if (!label || !base) return toast('Enter label and base price','error');
+  try {
+    const result = await api('/admin/client-fee', {
+      method:'POST', body: JSON.stringify({
+        client_id: clientId, label, base_price: base,
+        discount_type: type, discount_value: discount,
+        reason, app_id: appId || null
+      })
+    });
+    document.getElementById('fee-modal').remove();
+    toast(`Fee set — Final: ₹${result.final_price?.toFixed(0)}`);
+    loadClientProfile(clientId);
+  } catch(e) { toast('Error saving fee','error'); }
+}
+
+async function deleteFee(feeId, clientId) {
+  if (!confirm('Remove this fee entry?')) return;
+  try {
+    await api(`/admin/client-fee/${feeId}`, {method:'DELETE'});
+    toast('Fee removed');
+    loadClientProfile(clientId);
+  } catch(e) { toast('Error','error'); }
+}
+
+// Patch nav() to load clients when switching to client-profile
+const _origNav = nav;
+function nav(page) {
+  _origNav(page);
+  if (page === 'client-profile') {
+    loadAllClients();
+  }
 }
 
 // Init msg template
