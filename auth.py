@@ -34,14 +34,52 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
-# ── Dependency: require admin JWT ─────────────────────────────────────────────
+# ── Roles ──────────────────────────────────────────────────────────────────────
+# superadmin : full access, can create/edit/remove staff and assign roles
+# sales      : leads, follow-ups, clients, messaging
+# operations : applications, documents, checklists, hotels
+# accounts   : invoices, payments, fee structure
+# staff      : legacy role, treated like superadmin for backward compatibility
+ALL_ROLES = ("superadmin", "staff", "sales", "operations", "accounts")
+
+
+# ── Dependency: require admin JWT (any staff role) ────────────────────────────
 def require_admin(creds: HTTPAuthorizationCredentials = Depends(bearer)):
     if not creds:
         raise HTTPException(status_code=401, detail="Authentication required")
     payload = decode_token(creds.credentials)
-    if payload.get("role") not in ("staff", "superadmin"):
+    if payload.get("role") not in ALL_ROLES:
         raise HTTPException(status_code=403, detail="Admin access required")
     return payload
+
+
+# ── Dependency: require superadmin (for staff management) ────────────────────
+def require_superadmin(creds: HTTPAuthorizationCredentials = Depends(bearer)):
+    if not creds:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    payload = decode_token(creds.credentials)
+    if payload.get("role") not in ("superadmin", "staff"):
+        raise HTTPException(status_code=403, detail="Superadmin access required")
+    return payload
+
+
+# ── Factory: require one of a set of roles ────────────────────────────────────
+def require_roles(*roles):
+    """
+    Usage: Depends(require_roles('superadmin', 'accounts'))
+    superadmin/staff always pass regardless of which roles are listed.
+    """
+    def checker(creds: HTTPAuthorizationCredentials = Depends(bearer)):
+        if not creds:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        payload = decode_token(creds.credentials)
+        role = payload.get("role")
+        if role in ("superadmin", "staff"):
+            return payload
+        if role not in roles:
+            raise HTTPException(status_code=403, detail=f"Requires one of: {', '.join(roles)}")
+        return payload
+    return checker
 
 
 # ── Dependency: require client JWT ───────────────────────────────────────────
@@ -63,8 +101,8 @@ def admin_login(email: str, password: str) -> dict:
     conn.close()
     if not row or not verify_password(password, row["password"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = create_token({"sub": row["email"], "role": row["role"], "name": row["name"]})
-    return {"token": token, "name": row["name"], "role": row["role"]}
+    token = create_token({"sub": row["email"], "role": row["role"], "name": row["name"], "id": row["id"]})
+    return {"token": token, "name": row["name"], "role": row["role"], "id": row["id"]}
 
 
 def client_login(email: str, password: str) -> dict:
