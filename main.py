@@ -913,3 +913,215 @@ def admin_delete_client(client_id: int, admin=Depends(require_admin)):
     conn.commit()
     conn.close()
     return {"status": "deleted", "client": client["name"]}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PASSPORT OCR — Extract client details from uploaded passport image/PDF
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/admin/client/{client_id}/extract-passport")
+async def extract_passport_details(client_id: int, admin=Depends(require_admin)):
+    """
+    Try to extract name, DOB, passport number, nationality, expiry from
+    the stored passport image using pytesseract. Falls back gracefully if
+    tesseract is not installed on the Render instance.
+    """
+    import base64, re
+
+    conn = get_db()
+    row  = conn.execute(
+        "SELECT passport_b64, passport_filename FROM clients WHERE id=?", (client_id,)
+    ).fetchone()
+    conn.close()
+
+    if not row or not row["passport_b64"]:
+        raise HTTPException(404, "No passport on file")
+
+    # Try OCR
+    try:
+        import pytesseract
+        from PIL import Image
+        import io
+
+        img_bytes = base64.b64decode(row["passport_b64"])
+        filename  = row["passport_filename"] or ""
+
+        if filename.lower().endswith(".pdf"):
+            # Convert first PDF page to image
+            try:
+                import fitz  # PyMuPDF
+                doc  = fitz.open(stream=img_bytes, filetype="pdf")
+                page = doc[0]
+                pix  = page.get_pixmap(dpi=200)
+                img_bytes = pix.tobytes("png")
+            except Exception:
+                return {"error": "PDF OCR requires PyMuPDF — install it or upload a JPG scan"}
+
+        img  = Image.open(io.BytesIO(img_bytes))
+        text = pytesseract.image_to_string(img, lang="eng")
+
+        # Parse MRZ lines (last 2 lines of passport)
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        mrz   = [l for l in lines if len(l) >= 30 and "<" in l]
+
+        extracted = {}
+
+        # Try MRZ parsing if available
+        if len(mrz) >= 2:
+            m1 = mrz[-2].replace(" ", "")
+            m2 = mrz[-1].replace(" ", "")
+            # Line 1: surname<<given names
+            name_part = m1[5:44] if len(m1) > 44 else ""
+            if "<<" in name_part:
+                parts = name_part.split("<<")
+                extracted["surname"]    = parts[0].replace("<", " ").strip()
+                extracted["given_name"] = parts[1].replace("<", " ").strip() if len(parts) > 1 else ""
+            # Line 2: passport number, DOB, expiry
+            if len(m2) >= 28:
+                extracted["passport_number"] = m2[0:9].replace("<", "")
+                dob_raw = m2[13:19]
+                exp_raw = m2[19:25]
+                extracted["date_of_birth"] = _fmt_mrz_date(dob_raw)
+                extracted["expiry_date"]   = _fmt_mrz_date(exp_raw)
+                extracted["nationality"]   = m2[10:13].replace("<", "")
+                extracted["sex"]           = m2[20] if len(m2) > 20 else ""
+        else:
+            # Fallback: regex scan for common patterns
+            passport_re = re.compile(r'\b[A-Z]\d{7,8}\b')
+            date_re     = re.compile(r'\b(\d{2}[\/\-\.]\d{2}[\/\-\.]\d{2,4}|\d{2}\s(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s\d{4})\b', re.I)
+            pn = passport_re.findall(text)
+            dt = date_re.findall(text)
+            if pn: extracted["passport_number"] = pn[0]
+            if dt: extracted["date_of_birth"] = dt[0]
+            if len(dt) > 1: extracted["expiry_date"] = dt[-1]
+
+        extracted["raw_text"] = text[:800]
+        return {"status": "extracted", "data": extracted}
+
+    except ImportError:
+        return {
+            "status":  "ocr_unavailable",
+            "message": "pytesseract not installed. Add 'pytesseract' and 'Pillow' to requirements.txt and set TESSDATA_PREFIX on Render.",
+            "data":    {}
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e), "data": {}}
+
+
+def _fmt_mrz_date(s: str) -> str:
+    """Convert YYMMDD to DD/MM/YYYY."""
+    try:
+        yy, mm, dd = s[0:2], s[2:4], s[4:6]
+        year = int(yy)
+        full_year = 2000 + year if year <= 30 else 1900 + year
+        return f"{dd}/{mm}/{full_year}"
+    except Exception:
+        return s
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HOTEL / ACCOMMODATION CRM
+# ══════════════════════════════════════════════════════════════════════════════
+
+class HotelRecord(BaseModel):
+    client_id:      int
+    app_id:         Optional[str] = None
+    hotel_name:     str
+    city:           str
+    country:        str
+    check_in:       str
+    check_out:      str
+    booking_ref:    Optional[str] = ""
+    booking_status: str = "confirmed"      # confirmed | tentative | cancelled
+    room_type:      Optional[str] = ""
+    price_per_night: Optional[float] = None
+    total_price:    Optional[float] = None
+    currency:       str = "INR"
+    notes:          Optional[str] = ""
+    is_future:      int = 0                # 0=current, 1=future booking
+
+
+@app.post("/admin/hotel")
+def create_hotel_record(data: HotelRecord, admin=Depends(require_admin)):
+    """Create a hotel/accommodation record for a client."""
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO hotel_records
+        (client_id, app_id, hotel_name, city, country, check_in, check_out,
+         booking_ref, booking_status, room_type, price_per_night, total_price,
+         currency, notes, is_future, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        data.client_id, data.app_id, data.hotel_name, data.city, data.country,
+        data.check_in, data.check_out, data.booking_ref, data.booking_status,
+        data.room_type, data.price_per_night, data.total_price,
+        data.currency, data.notes, data.is_future, admin["name"]
+    ))
+    if data.app_id:
+        conn.execute(
+            "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+            (data.app_id, f"admin:{admin['name']}", "Hotel added",
+             f"{data.hotel_name}, {data.city} ({data.check_in} → {data.check_out})")
+        )
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status": "created", "id": new_id}
+
+
+@app.get("/admin/hotels/{client_id}")
+def get_client_hotels(client_id: int, admin=Depends(require_admin)):
+    """Get all hotel records for a client."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT * FROM hotel_records
+        WHERE client_id=?
+        ORDER BY check_in ASC
+    """, (client_id,)).fetchall()
+    conn.close()
+    current = [dict(r) for r in rows if not r["is_future"]]
+    future  = [dict(r) for r in rows if r["is_future"]]
+    return {"current": current, "future": future, "total": len(rows)}
+
+
+@app.put("/admin/hotel/{hotel_id}")
+def update_hotel_record(hotel_id: int, data: dict, admin=Depends(require_admin)):
+    """Update a hotel record."""
+    conn = get_db()
+    allowed = ["hotel_name","city","country","check_in","check_out","booking_ref",
+               "booking_status","room_type","price_per_night","total_price","notes","is_future"]
+    sets   = []
+    values = []
+    for k, v in data.items():
+        if k in allowed:
+            sets.append(f"{k}=?")
+            values.append(v)
+    if sets:
+        values.append(hotel_id)
+        conn.execute(f"UPDATE hotel_records SET {', '.join(sets)} WHERE id=?", values)
+        conn.commit()
+    conn.close()
+    return {"status": "updated"}
+
+
+@app.delete("/admin/hotel/{hotel_id}")
+def delete_hotel_record(hotel_id: int, admin=Depends(require_admin)):
+    conn = get_db()
+    conn.execute("DELETE FROM hotel_records WHERE id=?", (hotel_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+
+@app.get("/admin/hotels/export/all")
+def export_all_hotels(admin=Depends(require_admin)):
+    """Export all hotel records as JSON for Excel generation."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT h.*, c.name as client_name, c.email as client_email, c.phone as client_phone
+        FROM hotel_records h
+        JOIN clients c ON c.id = h.client_id
+        ORDER BY h.check_in ASC
+    """).fetchall()
+    conn.close()
+    return {"hotels": [dict(r) for r in rows]}
