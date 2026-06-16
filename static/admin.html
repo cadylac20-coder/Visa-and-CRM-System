@@ -304,6 +304,10 @@ tbody tr:hover{background:var(--surface2)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
         Client Profile
       </button>
+      <button class="nav-item" onclick="nav('hotels')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+        Hotel CRM
+      </button>
       <button class="nav-item" onclick="nav('export')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export CRM
@@ -593,6 +597,59 @@ tbody tr:hover{background:var(--surface2)}
       </div>
 
       <!-- EXPORT -->
+      <!-- HOTEL CRM -->
+      <div class="view" id="view-hotels">
+        <div class="page-header">
+          <div><h2>Hotel CRM</h2><p>Current and future hotel bookings per client</p></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="exportHotelsCRM()">Export to Excel</button>
+            <button class="btn btn-primary btn-sm" onclick="openHotelModal()">+ Add Hotel</button>
+          </div>
+        </div>
+
+        <!-- Filter bar -->
+        <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+          <input type="text" id="hotel-search" placeholder="Search client, hotel, city..."
+            oninput="filterHotels()"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 12px;color:var(--text);font-size:13px;outline:none;width:240px">
+          <select id="hotel-status-filter" onchange="filterHotels()"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;color:var(--text);font-size:13px;outline:none">
+            <option value="">All Statuses</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="tentative">Tentative</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <select id="hotel-time-filter" onchange="filterHotels()"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;color:var(--text);font-size:13px;outline:none">
+            <option value="">All Bookings</option>
+            <option value="current">Current / Past</option>
+            <option value="future">Future Bookings</option>
+          </select>
+        </div>
+
+        <!-- Current bookings -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-title">Current &amp; Past Bookings</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Client</th><th>Hotel</th><th>City</th><th>Check-in</th><th>Check-out</th><th>Ref</th><th>Status</th><th>Price</th><th>Actions</th></tr></thead>
+              <tbody id="hotels-current-table"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Future bookings -->
+        <div class="card">
+          <div class="card-title">Future Bookings</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Client</th><th>Hotel</th><th>City</th><th>Check-in</th><th>Check-out</th><th>Ref</th><th>Status</th><th>Price</th><th>Actions</th></tr></thead>
+              <tbody id="hotels-future-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <div class="view" id="view-export">
         <div class="page-header">
           <div><h2>Export CRM</h2><p>Download all data as Excel / CSV for Microsoft 365</p></div>
@@ -937,27 +994,27 @@ function api(path, opts={}) {
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 const PAGE_TITLES = {
-  'client-profile':'Client Profile', dashboard:'Dashboard', applications:'Applications', clients:'Clients',
+  'client-profile':'Client Profile', hotels:'Hotel CRM', dashboard:'Dashboard', applications:'Applications', clients:'Clients',
   vfs:'VFS Checklists', packages:'Packages', messages:'Send Message', export:'Export CRM'
 };
 
 function nav(page) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  const view = document.getElementById(`view-${page}`);
+  const view = document.getElementById('view-' + page);
   if (view) view.classList.add('active');
   document.getElementById('page-title').textContent = PAGE_TITLES[page] || page;
-  // Highlight the matching sidebar item
   document.querySelectorAll('.nav-item').forEach(btn => {
-    if (btn.getAttribute('onclick') === `nav('${page}')`) btn.classList.add('active');
+    if (btn.getAttribute('onclick') === "nav('" + page + "')") btn.classList.add('active');
   });
-  if (page === 'dashboard')       loadDashboard();
-  else if (page === 'applications') loadApplications();
-  else if (page === 'clients')    loadClients();
-  else if (page === 'messages')   loadRecentComms();
-  else if (page === 'packages')   renderPackages();
-  else if (page === 'vfs')        renderChecklists();
+  if      (page === 'dashboard')      loadDashboard();
+  else if (page === 'applications')   loadApplications();
+  else if (page === 'clients')        loadClients();
+  else if (page === 'messages')       loadRecentComms();
+  else if (page === 'packages')       renderPackages();
+  else if (page === 'vfs')            renderChecklists();
   else if (page === 'client-profile') loadAllClients();
+  else if (page === 'hotels')         { loadHotels(); if (!msgClients.length) loadMsgClients(); }
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -1744,6 +1801,7 @@ async function loadClientProfile(clientId) {
                </div>
                <div style="display:flex;gap:8px">
                  <button class="btn btn-ghost btn-sm" onclick="viewPassport(${c.id})">View</button>
+                 <button class="btn btn-ghost btn-sm" onclick="extractPassportDetails(${c.id})">Extract Details</button>
                  <button class="btn btn-ghost btn-sm" onclick="document.getElementById('passport-replace-${c.id}').click()">Replace</button>
                  <input type="file" id="passport-replace-${c.id}" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="uploadPassportDirect(${c.id},this)">
                </div>
@@ -2379,8 +2437,718 @@ async function loadClients() {
   } catch(e) { console.error(e); }
 }
 
+
+// ── Hotel CRM ─────────────────────────────────────────────────────────────────
+let allHotels = { current: [], future: [] };
+let editingHotelId = null;
+
+async function loadHotels() {
+  try {
+    const data = await api('/admin/hotels/export/all');
+    allHotels.current = data.hotels.filter(h => !h.is_future);
+    allHotels.future  = data.hotels.filter(h =>  h.is_future);
+    renderHotelTables(allHotels.current, allHotels.future);
+  } catch(e) { console.error('Hotel load error:', e); }
+}
+
+function filterHotels() {
+  const q      = (document.getElementById('hotel-search')?.value || '').toLowerCase();
+  const status = document.getElementById('hotel-status-filter')?.value || '';
+  const time   = document.getElementById('hotel-time-filter')?.value || '';
+
+  function match(h) {
+    const txt = `${h.client_name} ${h.hotel_name} ${h.city} ${h.booking_ref || ''}`.toLowerCase();
+    if (q && !txt.includes(q)) return false;
+    if (status && h.booking_status !== status) return false;
+    return true;
+  }
+
+  let cur = allHotels.current.filter(match);
+  let fut = allHotels.future.filter(match);
+
+  if (time === 'current') fut = [];
+  if (time === 'future')  cur = [];
+
+  renderHotelTables(cur, fut);
+}
+
+function renderHotelTables(current, future) {
+  document.getElementById('hotels-current-table').innerHTML =
+    current.length ? current.map(h => hotelRow(h)).join('') :
+    '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:20px">No current bookings</td></tr>';
+
+  document.getElementById('hotels-future-table').innerHTML =
+    future.length ? future.map(h => hotelRow(h)).join('') :
+    '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:20px">No future bookings yet</td></tr>';
+}
+
+function hotelRow(h) {
+  const statusColor = {confirmed:'var(--green)', tentative:'var(--gold)', cancelled:'var(--red)'}[h.booking_status] || 'var(--text3)';
+  const price = h.total_price ? `₹${Number(h.total_price).toLocaleString('en-IN')}` : (h.price_per_night ? `₹${h.price_per_night}/night` : '—');
+  return `
+    <tr>
+      <td><strong>${h.client_name}</strong><div style="font-size:11px;color:var(--text3)">${h.client_phone || h.client_email}</div></td>
+      <td>${h.hotel_name}<div style="font-size:11px;color:var(--text3)">${h.room_type || ''}</div></td>
+      <td>${h.city}, ${h.country}</td>
+      <td style="font-family:var(--mono);font-size:12px">${h.check_in}</td>
+      <td style="font-family:var(--mono);font-size:12px">${h.check_out}</td>
+      <td style="font-size:12px;color:var(--text3)">${h.booking_ref || '—'}</td>
+      <td><span style="color:${statusColor};font-size:12px;font-weight:600;text-transform:capitalize">${h.booking_status}</span></td>
+      <td style="font-size:13px;font-weight:600">${price}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="editHotel(${h.id})">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteHotel(${h.id})">Del</button>
+      </td>
+    </tr>`;
+}
+
+function openHotelModal(clientId) {
+  editingHotelId = null;
+  document.getElementById('hotel-modal-title').textContent = 'Add Hotel Booking';
+  // Clear form
+  ['hotel-name','hotel-city','hotel-country','hotel-ref','hotel-room','hotel-ppn','hotel-total','hotel-notes','hotel-app-id'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('hotel-checkin').value  = '';
+  document.getElementById('hotel-checkout').value = '';
+  document.getElementById('hotel-status').value   = 'confirmed';
+  document.querySelector('input[name="hotel-type"][value="0"]').checked = true;
+  // Populate client dropdown
+  populateHotelClientDropdown(clientId);
+  openModal('hotel-modal');
+}
+
+function editHotel(id) {
+  const all = [...allHotels.current, ...allHotels.future];
+  const h   = all.find(h => h.id === id);
+  if (!h) return;
+  editingHotelId = id;
+  document.getElementById('hotel-modal-title').textContent = 'Edit Hotel Booking';
+  populateHotelClientDropdown(h.client_id);
+  document.getElementById('hotel-client-id').value = h.client_id;
+  document.getElementById('hotel-app-id').value    = h.app_id || '';
+  document.getElementById('hotel-name').value      = h.hotel_name;
+  document.getElementById('hotel-city').value      = h.city;
+  document.getElementById('hotel-country').value   = h.country;
+  document.getElementById('hotel-checkin').value   = h.check_in;
+  document.getElementById('hotel-checkout').value  = h.check_out;
+  document.getElementById('hotel-ref').value       = h.booking_ref || '';
+  document.getElementById('hotel-room').value      = h.room_type || '';
+  document.getElementById('hotel-ppn').value       = h.price_per_night || '';
+  document.getElementById('hotel-total').value     = h.total_price || '';
+  document.getElementById('hotel-notes').value     = h.notes || '';
+  document.getElementById('hotel-status').value    = h.booking_status;
+  document.querySelector(`input[name="hotel-type"][value="${h.is_future}"]`).checked = true;
+  openModal('hotel-modal');
+}
+
+function populateHotelClientDropdown(selectedId) {
+  const sel = document.getElementById('hotel-client-id');
+  sel.innerHTML = '<option value="">Select client...</option>' +
+    msgClients.map(c => `<option value="${c.id}" ${c.id == selectedId ? 'selected' : ''}>${c.name} — ${c.email}</option>`).join('');
+}
+
+function calcHotelTotal() {
+  const ppn    = parseFloat(document.getElementById('hotel-ppn').value) || 0;
+  const cin    = document.getElementById('hotel-checkin').value;
+  const cout   = document.getElementById('hotel-checkout').value;
+  if (ppn && cin && cout) {
+    const nights = Math.ceil((new Date(cout) - new Date(cin)) / 86400000);
+    if (nights > 0) document.getElementById('hotel-total').value = (ppn * nights).toFixed(0);
+  }
+}
+
+async function saveHotel() {
+  const clientId = document.getElementById('hotel-client-id').value;
+  const name     = document.getElementById('hotel-name').value.trim();
+  const city     = document.getElementById('hotel-city').value.trim();
+  const country  = document.getElementById('hotel-country').value.trim();
+  const checkIn  = document.getElementById('hotel-checkin').value;
+  const checkOut = document.getElementById('hotel-checkout').value;
+
+  if (!clientId || !name || !city || !checkIn || !checkOut) {
+    return toast('Fill client, hotel name, city and dates','error');
+  }
+
+  const payload = {
+    client_id:       parseInt(clientId),
+    app_id:          document.getElementById('hotel-app-id').value.trim() || null,
+    hotel_name:      name,
+    city,
+    country:         country || city,
+    check_in:        checkIn,
+    check_out:       checkOut,
+    booking_ref:     document.getElementById('hotel-ref').value.trim(),
+    booking_status:  document.getElementById('hotel-status').value,
+    room_type:       document.getElementById('hotel-room').value.trim(),
+    price_per_night: parseFloat(document.getElementById('hotel-ppn').value) || null,
+    total_price:     parseFloat(document.getElementById('hotel-total').value) || null,
+    currency:        'INR',
+    notes:           document.getElementById('hotel-notes').value.trim(),
+    is_future:       parseInt(document.querySelector('input[name="hotel-type"]:checked').value),
+  };
+
+  try {
+    if (editingHotelId) {
+      await api(`/admin/hotel/${editingHotelId}`, {method:'PUT', body: JSON.stringify(payload)});
+      toast('Hotel booking updated');
+    } else {
+      await api('/admin/hotel', {method:'POST', body: JSON.stringify(payload)});
+      toast('Hotel booking added');
+    }
+    closeModal('hotel-modal');
+    loadHotels();
+  } catch(e) { toast('Error saving hotel','error'); }
+}
+
+async function deleteHotel(id) {
+  if (!confirm('Delete this hotel booking?')) return;
+  try {
+    await api(`/admin/hotel/${id}`, {method:'DELETE'});
+    toast('Deleted');
+    loadHotels();
+  } catch(e) { toast('Error deleting','error'); }
+}
+
+async function exportHotelsCRM() {
+  try {
+    const data = await api('/admin/hotels/export/all');
+    const hotels = data.hotels;
+    if (!hotels.length) return toast('No hotel records to export','error');
+
+    const headers = ['Client','Email','Phone','Hotel','City','Country','Check-in','Check-out','Nights','Room','Ref','Status','Price/Night','Total (INR)','Type','Notes'];
+    const rows = hotels.map(h => {
+      const nights = h.check_in && h.check_out
+        ? Math.ceil((new Date(h.check_out) - new Date(h.check_in)) / 86400000)
+        : '';
+      return [
+        h.client_name, h.client_email, h.client_phone || '',
+        h.hotel_name, h.city, h.country,
+        h.check_in, h.check_out, nights,
+        h.room_type || '', h.booking_ref || '',
+        h.booking_status,
+        h.price_per_night || '', h.total_price || '',
+        h.is_future ? 'Future' : 'Current/Past',
+        h.notes || ''
+      ];
+    });
+
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `mkov_hotels_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    toast('Hotel CRM exported');
+  } catch(e) { toast('Export failed','error'); }
+}
+
+// ── Passport OCR — extract details from uploaded scan ─────────────────────────
+async function extractPassportDetails(clientId) {
+  const btn = document.getElementById(`ocr-btn-${clientId}`);
+  if (btn) { btn.textContent = 'Extracting...'; btn.disabled = true; }
+
+  try {
+    const data = await api(`/admin/client/${clientId}/extract-passport`, {method:'POST'});
+
+    if (data.status === 'ocr_unavailable') {
+      toast('OCR not configured — add pytesseract to Render', 'error');
+      if (btn) { btn.textContent = 'Extract Details'; btn.disabled = false; }
+      return;
+    }
+
+    if (data.status === 'error') {
+      toast('Could not read passport — try a clearer scan', 'error');
+      if (btn) { btn.textContent = 'Extract Details'; btn.disabled = false; }
+      return;
+    }
+
+    const d = data.data;
+    // Show extracted data in a modal for admin to confirm before saving
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay show';
+    modal.style.zIndex = '200';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:500px">
+        <div class="modal-header">
+          <span class="modal-title">Extracted Passport Details</span>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="alert-info" style="background:rgba(79,142,247,0.1);border-left:3px solid var(--blue);padding:10px 14px;border-radius:var(--r);margin-bottom:16px;font-size:12px;color:var(--blue)">
+            Review extracted data before saving. OCR may have minor errors — correct if needed.
+          </div>
+          <div class="form-grid">
+            ${d.surname    ? `<div class="form-group"><label>Surname</label><input type="text" id="ocr-surname" value="${d.surname}"></div>` : ''}
+            ${d.given_name ? `<div class="form-group"><label>Given Names</label><input type="text" id="ocr-given" value="${d.given_name}"></div>` : ''}
+            ${d.passport_number ? `<div class="form-group"><label>Passport Number</label><input type="text" id="ocr-pnum" value="${d.passport_number}"></div>` : ''}
+            ${d.date_of_birth ? `<div class="form-group"><label>Date of Birth</label><input type="text" id="ocr-dob" value="${d.date_of_birth}"></div>` : ''}
+            ${d.expiry_date ? `<div class="form-group"><label>Expiry Date</label><input type="text" id="ocr-exp" value="${d.expiry_date}"></div>` : ''}
+            ${d.nationality ? `<div class="form-group"><label>Nationality</label><input type="text" id="ocr-nat" value="${d.nationality}"></div>` : ''}
+            ${d.sex ? `<div class="form-group"><label>Sex</label><input type="text" id="ocr-sex" value="${d.sex}"></div>` : ''}
+          </div>
+          ${!d.surname && !d.passport_number ? `
+            <div style="margin-top:12px">
+              <p style="font-size:12px;color:var(--text3);margin-bottom:8px">Could not auto-extract structured data. Raw OCR text:</p>
+              <pre style="background:var(--surface2);padding:12px;border-radius:var(--r);font-size:11px;overflow:auto;max-height:150px;white-space:pre-wrap">${(d.raw_text || '').substring(0, 500)}</pre>
+            </div>` : ''}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Discard</button>
+          <button class="btn btn-primary" onclick="saveExtractedPassport(${clientId}, this.closest('.modal-overlay'))">Save to Client Notes</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  } catch(e) {
+    toast('Extraction failed','error');
+  } finally {
+    if (btn) { btn.textContent = 'Extract Details'; btn.disabled = false; }
+  }
+}
+
+async function saveExtractedPassport(clientId, modalEl) {
+  // Build a notes string from all the filled fields
+  const fields = [
+    {id:'ocr-surname',  label:'Surname'},
+    {id:'ocr-given',    label:'Given Name'},
+    {id:'ocr-pnum',     label:'Passport No'},
+    {id:'ocr-dob',      label:'DOB'},
+    {id:'ocr-exp',      label:'Expiry'},
+    {id:'ocr-nat',      label:'Nationality'},
+    {id:'ocr-sex',      label:'Sex'},
+  ];
+  const parts = [];
+  fields.forEach(f => {
+    const el = document.getElementById(f.id);
+    if (el && el.value.trim()) parts.push(`${f.label}: ${el.value.trim()}`);
+  });
+  if (!parts.length) {
+    toast('No data to save','error');
+    return;
+  }
+  const note = `[Passport OCR — ${new Date().toLocaleDateString()}] ${parts.join(' | ')}`;
+  try {
+    // Save as team note on first application, or just update client details
+    await api(`/admin/client/${clientId}`, {
+      method: 'PUT',
+      body: JSON.stringify({name: document.getElementById('cp-name-display')?.textContent || ''})
+    });
+    // Store as internal note
+    const apps = (await api(`/admin/client/${clientId}`)).applications;
+    if (apps.length) {
+      await api(`/admin/application/${apps[0].app_id}/team-note`, {
+        method: 'POST',
+        body: JSON.stringify({note})
+      });
+    }
+    modalEl.remove();
+    toast('Passport details saved to team notes');
+    loadClientProfile(clientId);
+  } catch(e) { toast('Save failed','error'); }
+}
+
+// hotel nav handled in main nav()
+
+// ── Add "Extract Details" button to passport section in client profile ────────
+// Patch loadClientProfile to inject OCR button
+
+
+
+
+// ── CRM Full Export (enhanced with hotels) ────────────────────────────────────
+async function exportCRM(type) {
+  try {
+    const data = await api('/admin/dashboard');
+    let csv = '';
+
+    if (type === 'full' || type === 'applications') {
+      const headers = ['App ID','Client','Email','Phone','Destination','Visa Type','Status','Progress %','Travel Date','Created'];
+      const rows = data.applications.map(a => [
+        a.app_id, a.client_name, a.client_email, a.client_phone || '',
+        a.destination, a.visa_type, a.status, a.progress,
+        a.travel_date || '', a.created_at?.split('T')[0] || ''
+      ]);
+      csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    } else if (type === 'clients') {
+      const seen = new Set();
+      const clients = data.applications.filter(a => { if(seen.has(a.client_email))return false; seen.add(a.client_email); return true; });
+      csv = [['Name','Email','Phone','Applications'],...clients.map(c=>[
+        c.client_name,c.client_email,c.client_phone||'',
+        data.applications.filter(a=>a.client_email===c.client_email).length
+      ])].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    } else if (type === 'comms') {
+      toast('Communication log export — use Hotel CRM export for hotels','error');
+      return;
+    }
+
+    if (!csv) { toast('No data','error'); return; }
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `mkov_${type}_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    toast('Downloaded');
+  } catch(e) { toast('Export failed','error'); }
+}
+
 // Init msg template
 updateMsgTemplate();
+
+
+// ── Hotel CRM ─────────────────────────────────────────────────────────────────
+let allHotels = { current: [], future: [] };
+let editingHotelId = null;
+
+async function loadHotels() {
+  try {
+    const data = await api('/admin/hotels/export/all');
+    allHotels.current = data.hotels.filter(h => !h.is_future);
+    allHotels.future  = data.hotels.filter(h =>  h.is_future);
+    renderHotelTables(allHotels.current, allHotels.future);
+  } catch(e) { console.error('Hotel load error:', e); }
+}
+
+function filterHotels() {
+  const q      = (document.getElementById('hotel-search')?.value || '').toLowerCase();
+  const status = document.getElementById('hotel-status-filter')?.value || '';
+  const time   = document.getElementById('hotel-time-filter')?.value || '';
+
+  function match(h) {
+    const txt = `${h.client_name} ${h.hotel_name} ${h.city} ${h.booking_ref || ''}`.toLowerCase();
+    if (q && !txt.includes(q)) return false;
+    if (status && h.booking_status !== status) return false;
+    return true;
+  }
+
+  let cur = allHotels.current.filter(match);
+  let fut = allHotels.future.filter(match);
+
+  if (time === 'current') fut = [];
+  if (time === 'future')  cur = [];
+
+  renderHotelTables(cur, fut);
+}
+
+function renderHotelTables(current, future) {
+  document.getElementById('hotels-current-table').innerHTML =
+    current.length ? current.map(h => hotelRow(h)).join('') :
+    '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:20px">No current bookings</td></tr>';
+
+  document.getElementById('hotels-future-table').innerHTML =
+    future.length ? future.map(h => hotelRow(h)).join('') :
+    '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:20px">No future bookings yet</td></tr>';
+}
+
+function hotelRow(h) {
+  const statusColor = {confirmed:'var(--green)', tentative:'var(--gold)', cancelled:'var(--red)'}[h.booking_status] || 'var(--text3)';
+  const price = h.total_price ? `₹${Number(h.total_price).toLocaleString('en-IN')}` : (h.price_per_night ? `₹${h.price_per_night}/night` : '—');
+  return `
+    <tr>
+      <td><strong>${h.client_name}</strong><div style="font-size:11px;color:var(--text3)">${h.client_phone || h.client_email}</div></td>
+      <td>${h.hotel_name}<div style="font-size:11px;color:var(--text3)">${h.room_type || ''}</div></td>
+      <td>${h.city}, ${h.country}</td>
+      <td style="font-family:var(--mono);font-size:12px">${h.check_in}</td>
+      <td style="font-family:var(--mono);font-size:12px">${h.check_out}</td>
+      <td style="font-size:12px;color:var(--text3)">${h.booking_ref || '—'}</td>
+      <td><span style="color:${statusColor};font-size:12px;font-weight:600;text-transform:capitalize">${h.booking_status}</span></td>
+      <td style="font-size:13px;font-weight:600">${price}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="editHotel(${h.id})">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteHotel(${h.id})">Del</button>
+      </td>
+    </tr>`;
+}
+
+function openHotelModal(clientId) {
+  editingHotelId = null;
+  document.getElementById('hotel-modal-title').textContent = 'Add Hotel Booking';
+  // Clear form
+  ['hotel-name','hotel-city','hotel-country','hotel-ref','hotel-room','hotel-ppn','hotel-total','hotel-notes','hotel-app-id'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('hotel-checkin').value  = '';
+  document.getElementById('hotel-checkout').value = '';
+  document.getElementById('hotel-status').value   = 'confirmed';
+  document.querySelector('input[name="hotel-type"][value="0"]').checked = true;
+  // Populate client dropdown
+  populateHotelClientDropdown(clientId);
+  openModal('hotel-modal');
+}
+
+function editHotel(id) {
+  const all = [...allHotels.current, ...allHotels.future];
+  const h   = all.find(h => h.id === id);
+  if (!h) return;
+  editingHotelId = id;
+  document.getElementById('hotel-modal-title').textContent = 'Edit Hotel Booking';
+  populateHotelClientDropdown(h.client_id);
+  document.getElementById('hotel-client-id').value = h.client_id;
+  document.getElementById('hotel-app-id').value    = h.app_id || '';
+  document.getElementById('hotel-name').value      = h.hotel_name;
+  document.getElementById('hotel-city').value      = h.city;
+  document.getElementById('hotel-country').value   = h.country;
+  document.getElementById('hotel-checkin').value   = h.check_in;
+  document.getElementById('hotel-checkout').value  = h.check_out;
+  document.getElementById('hotel-ref').value       = h.booking_ref || '';
+  document.getElementById('hotel-room').value      = h.room_type || '';
+  document.getElementById('hotel-ppn').value       = h.price_per_night || '';
+  document.getElementById('hotel-total').value     = h.total_price || '';
+  document.getElementById('hotel-notes').value     = h.notes || '';
+  document.getElementById('hotel-status').value    = h.booking_status;
+  document.querySelector(`input[name="hotel-type"][value="${h.is_future}"]`).checked = true;
+  openModal('hotel-modal');
+}
+
+function populateHotelClientDropdown(selectedId) {
+  const sel = document.getElementById('hotel-client-id');
+  sel.innerHTML = '<option value="">Select client...</option>' +
+    msgClients.map(c => `<option value="${c.id}" ${c.id == selectedId ? 'selected' : ''}>${c.name} — ${c.email}</option>`).join('');
+}
+
+function calcHotelTotal() {
+  const ppn    = parseFloat(document.getElementById('hotel-ppn').value) || 0;
+  const cin    = document.getElementById('hotel-checkin').value;
+  const cout   = document.getElementById('hotel-checkout').value;
+  if (ppn && cin && cout) {
+    const nights = Math.ceil((new Date(cout) - new Date(cin)) / 86400000);
+    if (nights > 0) document.getElementById('hotel-total').value = (ppn * nights).toFixed(0);
+  }
+}
+
+async function saveHotel() {
+  const clientId = document.getElementById('hotel-client-id').value;
+  const name     = document.getElementById('hotel-name').value.trim();
+  const city     = document.getElementById('hotel-city').value.trim();
+  const country  = document.getElementById('hotel-country').value.trim();
+  const checkIn  = document.getElementById('hotel-checkin').value;
+  const checkOut = document.getElementById('hotel-checkout').value;
+
+  if (!clientId || !name || !city || !checkIn || !checkOut) {
+    return toast('Fill client, hotel name, city and dates','error');
+  }
+
+  const payload = {
+    client_id:       parseInt(clientId),
+    app_id:          document.getElementById('hotel-app-id').value.trim() || null,
+    hotel_name:      name,
+    city,
+    country:         country || city,
+    check_in:        checkIn,
+    check_out:       checkOut,
+    booking_ref:     document.getElementById('hotel-ref').value.trim(),
+    booking_status:  document.getElementById('hotel-status').value,
+    room_type:       document.getElementById('hotel-room').value.trim(),
+    price_per_night: parseFloat(document.getElementById('hotel-ppn').value) || null,
+    total_price:     parseFloat(document.getElementById('hotel-total').value) || null,
+    currency:        'INR',
+    notes:           document.getElementById('hotel-notes').value.trim(),
+    is_future:       parseInt(document.querySelector('input[name="hotel-type"]:checked').value),
+  };
+
+  try {
+    if (editingHotelId) {
+      await api(`/admin/hotel/${editingHotelId}`, {method:'PUT', body: JSON.stringify(payload)});
+      toast('Hotel booking updated');
+    } else {
+      await api('/admin/hotel', {method:'POST', body: JSON.stringify(payload)});
+      toast('Hotel booking added');
+    }
+    closeModal('hotel-modal');
+    loadHotels();
+  } catch(e) { toast('Error saving hotel','error'); }
+}
+
+async function deleteHotel(id) {
+  if (!confirm('Delete this hotel booking?')) return;
+  try {
+    await api(`/admin/hotel/${id}`, {method:'DELETE'});
+    toast('Deleted');
+    loadHotels();
+  } catch(e) { toast('Error deleting','error'); }
+}
+
+async function exportHotelsCRM() {
+  try {
+    const data = await api('/admin/hotels/export/all');
+    const hotels = data.hotels;
+    if (!hotels.length) return toast('No hotel records to export','error');
+
+    const headers = ['Client','Email','Phone','Hotel','City','Country','Check-in','Check-out','Nights','Room','Ref','Status','Price/Night','Total (INR)','Type','Notes'];
+    const rows = hotels.map(h => {
+      const nights = h.check_in && h.check_out
+        ? Math.ceil((new Date(h.check_out) - new Date(h.check_in)) / 86400000)
+        : '';
+      return [
+        h.client_name, h.client_email, h.client_phone || '',
+        h.hotel_name, h.city, h.country,
+        h.check_in, h.check_out, nights,
+        h.room_type || '', h.booking_ref || '',
+        h.booking_status,
+        h.price_per_night || '', h.total_price || '',
+        h.is_future ? 'Future' : 'Current/Past',
+        h.notes || ''
+      ];
+    });
+
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `mkov_hotels_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    toast('Hotel CRM exported');
+  } catch(e) { toast('Export failed','error'); }
+}
+
+// ── Passport OCR — extract details from uploaded scan ─────────────────────────
+async function extractPassportDetails(clientId) {
+  const btn = document.getElementById(`ocr-btn-${clientId}`);
+  if (btn) { btn.textContent = 'Extracting...'; btn.disabled = true; }
+
+  try {
+    const data = await api(`/admin/client/${clientId}/extract-passport`, {method:'POST'});
+
+    if (data.status === 'ocr_unavailable') {
+      toast('OCR not configured — add pytesseract to Render', 'error');
+      if (btn) { btn.textContent = 'Extract Details'; btn.disabled = false; }
+      return;
+    }
+
+    if (data.status === 'error') {
+      toast('Could not read passport — try a clearer scan', 'error');
+      if (btn) { btn.textContent = 'Extract Details'; btn.disabled = false; }
+      return;
+    }
+
+    const d = data.data;
+    // Show extracted data in a modal for admin to confirm before saving
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay show';
+    modal.style.zIndex = '200';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:500px">
+        <div class="modal-header">
+          <span class="modal-title">Extracted Passport Details</span>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="alert-info" style="background:rgba(79,142,247,0.1);border-left:3px solid var(--blue);padding:10px 14px;border-radius:var(--r);margin-bottom:16px;font-size:12px;color:var(--blue)">
+            Review extracted data before saving. OCR may have minor errors — correct if needed.
+          </div>
+          <div class="form-grid">
+            ${d.surname    ? `<div class="form-group"><label>Surname</label><input type="text" id="ocr-surname" value="${d.surname}"></div>` : ''}
+            ${d.given_name ? `<div class="form-group"><label>Given Names</label><input type="text" id="ocr-given" value="${d.given_name}"></div>` : ''}
+            ${d.passport_number ? `<div class="form-group"><label>Passport Number</label><input type="text" id="ocr-pnum" value="${d.passport_number}"></div>` : ''}
+            ${d.date_of_birth ? `<div class="form-group"><label>Date of Birth</label><input type="text" id="ocr-dob" value="${d.date_of_birth}"></div>` : ''}
+            ${d.expiry_date ? `<div class="form-group"><label>Expiry Date</label><input type="text" id="ocr-exp" value="${d.expiry_date}"></div>` : ''}
+            ${d.nationality ? `<div class="form-group"><label>Nationality</label><input type="text" id="ocr-nat" value="${d.nationality}"></div>` : ''}
+            ${d.sex ? `<div class="form-group"><label>Sex</label><input type="text" id="ocr-sex" value="${d.sex}"></div>` : ''}
+          </div>
+          ${!d.surname && !d.passport_number ? `
+            <div style="margin-top:12px">
+              <p style="font-size:12px;color:var(--text3);margin-bottom:8px">Could not auto-extract structured data. Raw OCR text:</p>
+              <pre style="background:var(--surface2);padding:12px;border-radius:var(--r);font-size:11px;overflow:auto;max-height:150px;white-space:pre-wrap">${(d.raw_text || '').substring(0, 500)}</pre>
+            </div>` : ''}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Discard</button>
+          <button class="btn btn-primary" onclick="saveExtractedPassport(${clientId}, this.closest('.modal-overlay'))">Save to Client Notes</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  } catch(e) {
+    toast('Extraction failed','error');
+  } finally {
+    if (btn) { btn.textContent = 'Extract Details'; btn.disabled = false; }
+  }
+}
+
+async function saveExtractedPassport(clientId, modalEl) {
+  // Build a notes string from all the filled fields
+  const fields = [
+    {id:'ocr-surname',  label:'Surname'},
+    {id:'ocr-given',    label:'Given Name'},
+    {id:'ocr-pnum',     label:'Passport No'},
+    {id:'ocr-dob',      label:'DOB'},
+    {id:'ocr-exp',      label:'Expiry'},
+    {id:'ocr-nat',      label:'Nationality'},
+    {id:'ocr-sex',      label:'Sex'},
+  ];
+  const parts = [];
+  fields.forEach(f => {
+    const el = document.getElementById(f.id);
+    if (el && el.value.trim()) parts.push(`${f.label}: ${el.value.trim()}`);
+  });
+  if (!parts.length) {
+    toast('No data to save','error');
+    return;
+  }
+  const note = `[Passport OCR — ${new Date().toLocaleDateString()}] ${parts.join(' | ')}`;
+  try {
+    // Save as team note on first application, or just update client details
+    await api(`/admin/client/${clientId}`, {
+      method: 'PUT',
+      body: JSON.stringify({name: document.getElementById('cp-name-display')?.textContent || ''})
+    });
+    // Store as internal note
+    const apps = (await api(`/admin/client/${clientId}`)).applications;
+    if (apps.length) {
+      await api(`/admin/application/${apps[0].app_id}/team-note`, {
+        method: 'POST',
+        body: JSON.stringify({note})
+      });
+    }
+    modalEl.remove();
+    toast('Passport details saved to team notes');
+    loadClientProfile(clientId);
+  } catch(e) { toast('Save failed','error'); }
+}
+
+// hotel nav handled in main nav()
+
+// ── Add "Extract Details" button to passport section in client profile ────────
+// Patch loadClientProfile to inject OCR button
+
+
+
+
+// ── CRM Full Export (enhanced with hotels) ────────────────────────────────────
+async function exportCRM(type) {
+  try {
+    const data = await api('/admin/dashboard');
+    let csv = '';
+
+    if (type === 'full' || type === 'applications') {
+      const headers = ['App ID','Client','Email','Phone','Destination','Visa Type','Status','Progress %','Travel Date','Created'];
+      const rows = data.applications.map(a => [
+        a.app_id, a.client_name, a.client_email, a.client_phone || '',
+        a.destination, a.visa_type, a.status, a.progress,
+        a.travel_date || '', a.created_at?.split('T')[0] || ''
+      ]);
+      csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    } else if (type === 'clients') {
+      const seen = new Set();
+      const clients = data.applications.filter(a => { if(seen.has(a.client_email))return false; seen.add(a.client_email); return true; });
+      csv = [['Name','Email','Phone','Applications'],...clients.map(c=>[
+        c.client_name,c.client_email,c.client_phone||'',
+        data.applications.filter(a=>a.client_email===c.client_email).length
+      ])].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    } else if (type === 'comms') {
+      toast('Communication log export — use Hotel CRM export for hotels','error');
+      return;
+    }
+
+    if (!csv) { toast('No data','error'); return; }
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `mkov_${type}_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    toast('Downloaded');
+  } catch(e) { toast('Export failed','error'); }
+}
 
 // Init msg template
 updateMsgTemplate();
@@ -2464,6 +3232,103 @@ function downloadPassport(b64, filename) {
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('admin-upload-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="submitAdminDocUpload()">Upload</button>
+    </div>
+  </div>
+</div>
+
+<!-- Hotel Modal -->
+<div class="modal-overlay" id="hotel-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <span class="modal-title" id="hotel-modal-title">Add Hotel Booking</span>
+      <button class="modal-close" onclick="closeModal('hotel-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Client</label>
+          <select id="hotel-client-id" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-size:13px;outline:none">
+            <option value="">Select client...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Application ID (optional)</label>
+          <input type="text" id="hotel-app-id" placeholder="VIS-2026-001">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Hotel Name</label>
+            <input type="text" id="hotel-name" placeholder="e.g. Atlantis The Palm">
+          </div>
+          <div class="form-group">
+            <label>Booking Status</label>
+            <select id="hotel-status">
+              <option value="confirmed">Confirmed</option>
+              <option value="tentative">Tentative</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>City</label>
+            <input type="text" id="hotel-city" placeholder="e.g. Dubai">
+          </div>
+          <div class="form-group">
+            <label>Country</label>
+            <input type="text" id="hotel-country" placeholder="e.g. UAE">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Check-in Date</label>
+            <input type="date" id="hotel-checkin">
+          </div>
+          <div class="form-group">
+            <label>Check-out Date</label>
+            <input type="date" id="hotel-checkout">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Room Type</label>
+            <input type="text" id="hotel-room" placeholder="e.g. Deluxe King">
+          </div>
+          <div class="form-group">
+            <label>Booking Reference</label>
+            <input type="text" id="hotel-ref" placeholder="e.g. HB-12345">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Price per Night (INR)</label>
+            <input type="number" id="hotel-ppn" placeholder="0" oninput="calcHotelTotal()">
+          </div>
+          <div class="form-group">
+            <label>Total Price (INR)</label>
+            <input type="number" id="hotel-total" placeholder="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Booking Type</label>
+          <div style="display:flex;gap:12px;margin-top:6px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
+              <input type="radio" name="hotel-type" value="0" checked> Current / Past booking
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
+              <input type="radio" name="hotel-type" value="1"> Future booking
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="hotel-notes" placeholder="e.g. Breakfast included, sea view requested"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('hotel-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveHotel()">Save Booking</button>
     </div>
   </div>
 </div>
