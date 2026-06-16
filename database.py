@@ -193,6 +193,99 @@ def init_db():
         )
     """)
 
+    # ── Leads (pre-client inquiries) ───────────────────────────────────────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS leads (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            name          TEXT NOT NULL,
+            email         TEXT,
+            phone         TEXT,
+            destination   TEXT,
+            visa_type     TEXT,
+            source        TEXT DEFAULT 'manual',   -- manual|website|whatsapp|referral|walk_in|call
+            status        TEXT DEFAULT 'new',       -- new|contacted|qualified|quoted|won|lost
+            assigned_to   INTEGER REFERENCES admin_users(id),
+            notes         TEXT,
+            converted_client_id INTEGER REFERENCES clients(id),
+            created_by    TEXT,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # ── Lead follow-ups ───────────────────────────────────────────────────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS lead_followups (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            lead_id       INTEGER NOT NULL REFERENCES leads(id),
+            due_at        DATETIME NOT NULL,
+            note          TEXT,
+            channel       TEXT DEFAULT 'call',     -- call|whatsapp|email|meeting
+            status        TEXT DEFAULT 'pending',  -- pending|done|missed
+            completed_at  DATETIME,
+            created_by    TEXT,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # ── Calendar events (visa appointments, travel dates, reminders) ───────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            title         TEXT NOT NULL,
+            event_type    TEXT DEFAULT 'other',    -- embassy_appointment|travel_date|followup|deadline|other
+            start_at      DATETIME NOT NULL,
+            end_at        DATETIME,
+            all_day       INTEGER DEFAULT 0,
+            client_id     INTEGER REFERENCES clients(id),
+            app_id        TEXT,
+            lead_id       INTEGER REFERENCES leads(id),
+            location      TEXT,
+            notes         TEXT,
+            color         TEXT DEFAULT '#00c6b8',
+            created_by    TEXT,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # ── Invoices ──────────────────────────────────────────────────────────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS invoices (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_no    TEXT UNIQUE NOT NULL,
+            client_id     INTEGER NOT NULL REFERENCES clients(id),
+            app_id        TEXT,
+            line_items_json TEXT NOT NULL,        -- [{label, qty, unit_price, amount}]
+            subtotal      DECIMAL(10,2) DEFAULT 0,
+            discount      DECIMAL(10,2) DEFAULT 0,
+            tax_percent   DECIMAL(5,2) DEFAULT 0,
+            tax_amount    DECIMAL(10,2) DEFAULT 0,
+            total         DECIMAL(10,2) DEFAULT 0,
+            amount_paid   DECIMAL(10,2) DEFAULT 0,
+            status        TEXT DEFAULT 'unpaid',   -- unpaid|partial|paid|overdue|cancelled
+            due_date      TEXT,
+            notes         TEXT,
+            created_by    TEXT,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # ── Invoice payments (partial payments allowed) ─────────────────────────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS invoice_payments (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_id    INTEGER NOT NULL REFERENCES invoices(id),
+            amount        DECIMAL(10,2) NOT NULL,
+            method        TEXT DEFAULT 'cash',     -- cash|upi|card|bank_transfer|cheque|other
+            reference     TEXT,
+            paid_at       TEXT NOT NULL,
+            notes         TEXT,
+            recorded_by   TEXT,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     # ── Seed admin user ───────────────────────────────────────────────────────
     import bcrypt
     admin_hash = bcrypt.hashpw(b"admin123", bcrypt.gensalt()).decode()
@@ -246,6 +339,38 @@ def init_db():
             'VIS-2026-001',
             'Your application has been submitted to the UAE Embassy. Expected decision in 5-7 working days.',
             0)
+    """)
+
+    # ── Seed demo lead ──────────────────────────────────────────────────────
+    c.execute("""
+        INSERT OR IGNORE INTO leads (id, name, email, phone, destination, visa_type, source, status, created_by)
+        VALUES (1, 'Priya Mehta', 'priya.mehta@email.com', '+919812345678', 'Singapore', 'tourist', 'website', 'new', 'system')
+    """)
+    c.execute("""
+        INSERT OR IGNORE INTO lead_followups (lead_id, due_at, note, channel, status, created_by)
+        VALUES (1, datetime('now', '+1 day'), 'Call to discuss Singapore package options', 'call', 'pending', 'system')
+    """)
+
+    # ── Seed demo calendar event ────────────────────────────────────────────
+    c.execute("""
+        INSERT OR IGNORE INTO calendar_events (id, title, event_type, start_at, client_id, app_id, notes, created_by)
+        VALUES (1, 'UAE Embassy Appointment - Rahul Sharma', 'embassy_appointment', datetime('now', '+3 day'),
+            (SELECT id FROM clients WHERE email='rahul.sharma@email.com'), 'VIS-2026-001',
+            'Bring original passport and bank statements', 'system')
+    """)
+
+    # ── Seed demo invoice ────────────────────────────────────────────────────
+    c.execute("""
+        INSERT OR IGNORE INTO invoices
+            (id, invoice_no, client_id, app_id, line_items_json, subtotal, total, amount_paid, status, due_date, created_by)
+        VALUES (1, 'INV-2026-001',
+            (SELECT id FROM clients WHERE email='rahul.sharma@email.com'), 'VIS-2026-001',
+            '[{"label":"UAE Tourist Visa - Service Fee","qty":1,"unit_price":5000,"amount":5000}]',
+            5000, 5000, 2000, 'partial', date('now', '+10 day'), 'system')
+    """)
+    c.execute("""
+        INSERT OR IGNORE INTO invoice_payments (id, invoice_id, amount, method, paid_at, recorded_by)
+        VALUES (1, 1, 2000, 'upi', date('now', '-2 day'), 'system')
     """)
 
     conn.commit()
