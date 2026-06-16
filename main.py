@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from database import init_db, get_db
-from auth import require_admin, require_client, admin_login, client_login, hash_password
+from auth import require_admin, require_client, require_superadmin, require_roles, admin_login, client_login, hash_password
 from notifier import send_checklist, send_status_update, send_reminder
 
 init_db()
@@ -91,6 +91,92 @@ class SendStatusRequest(BaseModel):
 
 class SendReminderRequest(BaseModel):
     app_id: str; missing_docs: list; channels: list = ["whatsapp", "email"]
+
+# --- Staff management schemas ───────────────────────────────────────────────
+class NewStaffRequest(BaseModel):
+    name: str; email: str; password: str
+    role: str = "sales"   # sales | operations | accounts | superadmin
+
+class UpdateStaffRequest(BaseModel):
+    name:     Optional[str] = None
+    role:     Optional[str] = None
+    active:   Optional[int] = None
+    password: Optional[str] = None
+
+# --- Leads & follow-up schemas ──────────────────────────────────────────────
+class NewLeadRequest(BaseModel):
+    name: str; email: Optional[str] = ""; phone: Optional[str] = ""
+    destination: Optional[str] = ""; visa_type: Optional[str] = ""
+    source: str = "manual"; notes: Optional[str] = ""
+    assigned_to: Optional[int] = None
+
+class UpdateLeadRequest(BaseModel):
+    name:        Optional[str] = None
+    email:       Optional[str] = None
+    phone:       Optional[str] = None
+    destination: Optional[str] = None
+    visa_type:   Optional[str] = None
+    status:      Optional[str] = None
+    assigned_to: Optional[int] = None
+    notes:       Optional[str] = None
+
+class NewFollowupRequest(BaseModel):
+    lead_id: int; due_at: str; note: Optional[str] = ""; channel: str = "call"
+
+class ConvertLeadRequest(BaseModel):
+    password: str   # client portal password to set on conversion
+
+# --- Calendar schemas ────────────────────────────────────────────────────────
+class NewCalendarEventRequest(BaseModel):
+    title:      str
+    event_type: str = "other"
+    start_at:   str
+    end_at:     Optional[str] = None
+    all_day:    int = 0
+    client_id:  Optional[int] = None
+    app_id:     Optional[str] = None
+    lead_id:    Optional[int] = None
+    location:   Optional[str] = ""
+    notes:      Optional[str] = ""
+    color:      Optional[str] = "#00c6b8"
+
+class UpdateCalendarEventRequest(BaseModel):
+    title:      Optional[str] = None
+    event_type: Optional[str] = None
+    start_at:   Optional[str] = None
+    end_at:     Optional[str] = None
+    all_day:    Optional[int] = None
+    location:   Optional[str] = None
+    notes:      Optional[str] = None
+    color:      Optional[str] = None
+
+# --- Invoice & payment schemas ───────────────────────────────────────────────
+class InvoiceLineItem(BaseModel):
+    label: str; qty: float = 1; unit_price: float = 0
+
+class NewInvoiceRequest(BaseModel):
+    client_id:    int
+    app_id:       Optional[str] = None
+    line_items:   list[InvoiceLineItem]
+    discount:     float = 0
+    tax_percent:  float = 0
+    due_date:     Optional[str] = None
+    notes:        Optional[str] = ""
+
+class UpdateInvoiceRequest(BaseModel):
+    line_items:  Optional[list[InvoiceLineItem]] = None
+    discount:    Optional[float] = None
+    tax_percent: Optional[float] = None
+    due_date:    Optional[str] = None
+    notes:       Optional[str] = None
+    status:      Optional[str] = None
+
+class RecordPaymentRequest(BaseModel):
+    amount:    float
+    method:    str = "cash"
+    reference: Optional[str] = ""
+    paid_at:   Optional[str] = None
+    notes:     Optional[str] = ""
 
 # --- Health & Frontend ─────────────────────────────────────────────────────────
 @app.get("/")
@@ -1125,3 +1211,302 @@ def export_all_hotels(admin=Depends(require_admin)):
     """).fetchall()
     conn.close()
     return {"hotels": [dict(r) for r in rows]}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAFF MANAGEMENT — superadmin appoints staff and assigns roles
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/staff")
+def list_staff(admin=Depends(require_superadmin)):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, name, email, role, active, created_at FROM admin_users ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+    return {"staff": [dict(r) for r in rows]}
+
+
+@app.post("/admin/staff")
+def create_staff(data: NewStaffRequest, admin=Depends(require_superadmin)):
+    from auth import ALL_ROLES
+    if data.role not in ALL_ROLES:
+        raise HTTPException(400, f"Role must be one of: {', '.join(ALL_ROLES)}")
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO admin_users (name, email, password, role) VALUES (?,?,?,?)",
+            (data.name, data.email, hash_password(data.password), data.role)
+        )
+        conn.commit()
+        new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.close()
+        return {"status": "created", "id": new_id}
+    except Exception as e:
+        conn.close()
+        raise HTTPException(400, f"Could not create staff (duplicate email?): {e}")
+
+
+@app.put("/admin/staff/{staff_id}")
+def update_staff(staff_id: int, data: UpdateStaffRequest, admin=Depends(require_superadmin)):
+    conn = get_db()
+    target = conn.execute("SELECT * FROM admin_users WHERE id=?", (staff_id,)).fetchone()
+    if not target:
+        conn.close()
+        raise HTTPException(404, "Staff member not found")
+
+    if target["role"] == "superadmin" and admin.get("id") != staff_id and data.active == 0:
+        conn.close()
+        raise HTTPException(400, "Cannot deactivate the superadmin account")
+
+    sets, values = [], []
+    if data.name is not None:
+        sets.append("name=?"); values.append(data.name)
+    if data.role is not None:
+        from auth import ALL_ROLES
+        if data.role not in ALL_ROLES:
+            conn.close()
+            raise HTTPException(400, f"Role must be one of: {', '.join(ALL_ROLES)}")
+        sets.append("role=?"); values.append(data.role)
+    if data.active is not None:
+        sets.append("active=?"); values.append(data.active)
+    if data.password:
+        sets.append("password=?"); values.append(hash_password(data.password))
+
+    if sets:
+        values.append(staff_id)
+        conn.execute(f"UPDATE admin_users SET {', '.join(sets)} WHERE id=?", values)
+        conn.commit()
+    conn.close()
+    return {"status": "updated"}
+
+
+@app.delete("/admin/staff/{staff_id}")
+def delete_staff(staff_id: int, admin=Depends(require_superadmin)):
+    conn = get_db()
+    target = conn.execute("SELECT role FROM admin_users WHERE id=?", (staff_id,)).fetchone()
+    if not target:
+        conn.close()
+        raise HTTPException(404, "Staff member not found")
+    if target["role"] == "superadmin":
+        conn.close()
+        raise HTTPException(400, "Cannot delete the superadmin account")
+    conn.execute("DELETE FROM admin_users WHERE id=?", (staff_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LEADS & FOLLOW-UPS — track inquiries before they become paying clients
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/leads")
+def list_leads(status: Optional[str] = None, admin=Depends(require_roles("sales"))):
+    conn = get_db()
+    if status:
+        rows = conn.execute("""
+            SELECT l.*, a.name as assigned_name
+            FROM leads l LEFT JOIN admin_users a ON a.id = l.assigned_to
+            WHERE l.status=? ORDER BY l.created_at DESC
+        """, (status,)).fetchall()
+    else:
+        rows = conn.execute("""
+            SELECT l.*, a.name as assigned_name
+            FROM leads l LEFT JOIN admin_users a ON a.id = l.assigned_to
+            ORDER BY l.created_at DESC
+        """).fetchall()
+
+    lead_ids = [r["id"] for r in rows]
+    next_followups = {}
+    if lead_ids:
+        placeholders = ",".join("?" * len(lead_ids))
+        fu_rows = conn.execute(f"""
+            SELECT lead_id, MIN(due_at) as next_due
+            FROM lead_followups
+            WHERE status='pending' AND lead_id IN ({placeholders})
+            GROUP BY lead_id
+        """, lead_ids).fetchall()
+        next_followups = {r["lead_id"]: r["next_due"] for r in fu_rows}
+
+    conn.close()
+    leads = []
+    for r in rows:
+        d = dict(r)
+        d["next_followup"] = next_followups.get(r["id"])
+        leads.append(d)
+
+    stats = {
+        "new":       sum(1 for l in leads if l["status"] == "new"),
+        "contacted": sum(1 for l in leads if l["status"] == "contacted"),
+        "qualified": sum(1 for l in leads if l["status"] == "qualified"),
+        "quoted":    sum(1 for l in leads if l["status"] == "quoted"),
+        "won":       sum(1 for l in leads if l["status"] == "won"),
+        "lost":      sum(1 for l in leads if l["status"] == "lost"),
+        "total":     len(leads),
+    }
+    return {"leads": leads, "stats": stats}
+
+
+@app.get("/admin/lead/{lead_id}")
+def get_lead(lead_id: int, admin=Depends(require_roles("sales"))):
+    conn = get_db()
+    lead = conn.execute("""
+        SELECT l.*, a.name as assigned_name
+        FROM leads l LEFT JOIN admin_users a ON a.id = l.assigned_to
+        WHERE l.id=?
+    """, (lead_id,)).fetchone()
+    if not lead:
+        conn.close()
+        raise HTTPException(404, "Lead not found")
+    followups = conn.execute(
+        "SELECT * FROM lead_followups WHERE lead_id=? ORDER BY due_at DESC", (lead_id,)
+    ).fetchall()
+    conn.close()
+    return {"lead": dict(lead), "followups": [dict(f) for f in followups]}
+
+
+@app.post("/admin/leads")
+def create_lead(data: NewLeadRequest, admin=Depends(require_roles("sales"))):
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO leads (name, email, phone, destination, visa_type, source, notes, assigned_to, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?)
+    """, (data.name, data.email, data.phone, data.destination, data.visa_type,
+          data.source, data.notes, data.assigned_to, admin["name"]))
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status": "created", "id": new_id}
+
+
+@app.put("/admin/lead/{lead_id}")
+def update_lead(lead_id: int, data: UpdateLeadRequest, admin=Depends(require_roles("sales"))):
+    conn = get_db()
+    lead = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
+    if not lead:
+        conn.close()
+        raise HTTPException(404, "Lead not found")
+
+    sets, values = ["updated_at=CURRENT_TIMESTAMP"], []
+    fields = {
+        "name": data.name, "email": data.email, "phone": data.phone,
+        "destination": data.destination, "visa_type": data.visa_type,
+        "status": data.status, "assigned_to": data.assigned_to, "notes": data.notes,
+    }
+    for col, val in fields.items():
+        if val is not None:
+            sets.append(f"{col}=?")
+            values.append(val)
+    if len(sets) > 1:
+        values.append(lead_id)
+        conn.execute(f"UPDATE leads SET {', '.join(sets)} WHERE id=?", values)
+        conn.commit()
+    conn.close()
+    return {"status": "updated"}
+
+
+@app.delete("/admin/lead/{lead_id}")
+def delete_lead(lead_id: int, admin=Depends(require_roles("sales"))):
+    conn = get_db()
+    conn.execute("DELETE FROM lead_followups WHERE lead_id=?", (lead_id,))
+    conn.execute("DELETE FROM leads WHERE id=?", (lead_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+
+@app.post("/admin/lead/{lead_id}/convert")
+def convert_lead_to_client(lead_id: int, data: ConvertLeadRequest, admin=Depends(require_roles("sales"))):
+    """Convert a won lead into a real client + application."""
+    conn = get_db()
+    lead = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
+    if not lead:
+        conn.close()
+        raise HTTPException(404, "Lead not found")
+    if not lead["email"]:
+        conn.close()
+        raise HTTPException(400, "Lead needs an email address before converting")
+
+    existing = conn.execute("SELECT id FROM clients WHERE email=?", (lead["email"],)).fetchone()
+    if existing:
+        client_id = existing["id"]
+    else:
+        conn.execute(
+            "INSERT INTO clients (name, email, phone, password) VALUES (?,?,?,?)",
+            (lead["name"], lead["email"], lead["phone"], hash_password(data.password))
+        )
+        client_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    count  = conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
+    app_id = f"VIS-{datetime.now().year}-{str(count+1).zfill(3)}"
+
+    conn.execute("""
+        INSERT INTO applications (app_id, client_id, destination, visa_type, status, progress)
+        VALUES (?,?,?,?,?,?)
+    """, (app_id, client_id, lead["destination"] or "TBD", lead["visa_type"] or "tourist", "pending", 10))
+
+    conn.execute(
+        "UPDATE leads SET status='won', converted_client_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (client_id, lead_id)
+    )
+    conn.execute(
+        "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+        (app_id, f"admin:{admin['name']}", "Lead converted", f"Converted from lead #{lead_id}")
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "converted", "client_id": client_id, "app_id": app_id}
+
+
+@app.post("/admin/lead/{lead_id}/followup")
+def add_followup(lead_id: int, data: NewFollowupRequest, admin=Depends(require_roles("sales"))):
+    conn = get_db()
+    lead = conn.execute("SELECT id FROM leads WHERE id=?", (lead_id,)).fetchone()
+    if not lead:
+        conn.close()
+        raise HTTPException(404, "Lead not found")
+    conn.execute("""
+        INSERT INTO lead_followups (lead_id, due_at, note, channel, created_by)
+        VALUES (?,?,?,?,?)
+    """, (lead_id, data.due_at, data.note, data.channel, admin["name"]))
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status": "created", "id": new_id}
+
+
+@app.post("/admin/followup/{followup_id}/complete")
+def complete_followup(followup_id: int, admin=Depends(require_roles("sales"))):
+    conn = get_db()
+    conn.execute(
+        "UPDATE lead_followups SET status='done', completed_at=CURRENT_TIMESTAMP WHERE id=?",
+        (followup_id,)
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "completed"}
+
+
+@app.delete("/admin/followup/{followup_id}")
+def delete_followup(followup_id: int, admin=Depends(require_roles("sales"))):
+    conn = get_db()
+    conn.execute("DELETE FROM lead_followups WHERE id=?", (followup_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+
+@app.get("/admin/followups/due")
+def get_due_followups(admin=Depends(require_roles("sales"))):
+    """All pending follow-ups due today or overdue — for dashboard widget."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT f.*, l.name as lead_name, l.phone as lead_phone, l.destination
+        FROM lead_followups f
+        JOIN leads l ON l.id = f.lead_id
+        WHERE f.status='pending' AND f.due_at <= datetime('now', '+1 day')
+        ORDER BY f.due_at ASC
+    """).fetchall()
+    conn.close()
+    return {"followups": [dict(r) for r in rows]}
