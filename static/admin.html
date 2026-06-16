@@ -274,43 +274,63 @@ tbody tr:hover{background:var(--surface2)}
     </div>
     <nav class="nav">
       <div class="nav-section">Main</div>
-      <button class="nav-item active" onclick="nav('dashboard')">
+      <button class="nav-item active" data-page="dashboard" onclick="nav('dashboard')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
         Dashboard
       </button>
-      <button class="nav-item" onclick="nav('applications')">
+      <button class="nav-item" data-page="leads" onclick="nav('leads')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Leads
+        <span class="badge" id="nav-leads-count">0</span>
+      </button>
+      <button class="nav-item" data-page="calendar" onclick="nav('calendar')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Calendar
+      </button>
+      <button class="nav-item" data-page="applications" onclick="nav('applications')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
         Applications
         <span class="badge" id="nav-pending-count">0</span>
       </button>
-      <button class="nav-item" onclick="nav('clients')">
+      <button class="nav-item" data-page="clients" onclick="nav('clients')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Clients
       </button>
+      <div class="nav-section">Finance</div>
+      <button class="nav-item" data-page="invoices" onclick="nav('invoices')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2h12l4 4v16H4z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+        Invoices
+        <span class="badge" id="nav-due-count" style="background:var(--red)">0</span>
+      </button>
       <div class="nav-section">Tools</div>
-      <button class="nav-item" onclick="nav('vfs')">
+      <button class="nav-item" data-page="vfs" onclick="nav('vfs')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         VFS Checklists
       </button>
-      <button class="nav-item" onclick="nav('packages')">
+      <button class="nav-item" data-page="packages" onclick="nav('packages')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
         Packages
       </button>
-      <button class="nav-item" onclick="nav('messages')">
+      <button class="nav-item" data-page="messages" onclick="nav('messages')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         Send Message
       </button>
-      <button class="nav-item" onclick="nav('client-profile')">
+      <button class="nav-item" data-page="client-profile" onclick="nav('client-profile')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
         Client Profile
       </button>
-      <button class="nav-item" onclick="nav('hotels')">
+      <button class="nav-item" data-page="hotels" onclick="nav('hotels')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
         Hotel CRM
       </button>
-      <button class="nav-item" onclick="nav('export')">
+      <button class="nav-item" data-page="export" onclick="nav('export')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export CRM
+      </button>
+      <div class="nav-section">Admin</div>
+      <button class="nav-item" data-page="staff-management" onclick="nav('staff-management')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Staff & Roles
       </button>
     </nav>
     <div class="sidebar-footer">
@@ -650,6 +670,136 @@ tbody tr:hover{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- LEADS & FOLLOW-UPS -->
+      <div class="view" id="view-leads">
+        <div class="page-header">
+          <div><h2>Leads & Follow-ups</h2><p>Track inquiries before they become paying clients</p></div>
+          <button class="btn btn-primary btn-sm" onclick="openLeadModal()">+ New Lead</button>
+        </div>
+
+        <div class="stats-grid" id="leads-stats-grid">
+          <div class="stat-card"><div class="stat-value" id="lead-stat-new">0</div><div class="stat-label">New</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--blue)" id="lead-stat-contacted">0</div><div class="stat-label">Contacted</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--gold)" id="lead-stat-qualified">0</div><div class="stat-label">Qualified</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--teal)" id="lead-stat-quoted">0</div><div class="stat-label">Quoted</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--green)" id="lead-stat-won">0</div><div class="stat-label">Won</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--red)" id="lead-stat-lost">0</div><div class="stat-label">Lost</div></div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-title">Due / Overdue Follow-ups</div>
+          <div id="due-followups-list"></div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div class="card-title" style="margin:0">All Leads</div>
+            <select id="lead-status-filter" onchange="loadLeads()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:13px;outline:none">
+              <option value="">All Statuses</option>
+              <option value="new">New</option>
+              <option value="contacted">Contacted</option>
+              <option value="qualified">Qualified</option>
+              <option value="quoted">Quoted</option>
+              <option value="won">Won</option>
+              <option value="lost">Lost</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Contact</th><th>Destination</th><th>Source</th><th>Status</th><th>Next Follow-up</th><th>Assigned</th><th>Actions</th></tr></thead>
+              <tbody id="leads-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- CALENDAR -->
+      <div class="view" id="view-calendar">
+        <div class="page-header">
+          <div><h2>Calendar</h2><p>Embassy appointments, travel dates, and deadlines</p></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="calendarShiftMonth(-1)">← Prev</button>
+            <button class="btn btn-ghost btn-sm" onclick="calendarShiftMonth(0)">Today</button>
+            <button class="btn btn-ghost btn-sm" onclick="calendarShiftMonth(1)">Next →</button>
+            <button class="btn btn-primary btn-sm" onclick="openCalendarModal()">+ New Event</button>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div class="card-title" style="margin:0" id="calendar-month-label">—</div>
+          </div>
+          <div id="calendar-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Upcoming (next 14 days)</div>
+          <div id="calendar-upcoming-list"></div>
+        </div>
+      </div>
+
+      <!-- INVOICES & PAYMENTS -->
+      <div class="view" id="view-invoices">
+        <div class="page-header">
+          <div><h2>Invoices & Payments</h2><p>Billing, collections, and fee structure per client</p></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="exportInvoicesCRM()">Export to Excel</button>
+            <button class="btn btn-primary btn-sm" onclick="openInvoiceModal()">+ New Invoice</button>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-value" id="inv-stat-invoiced">₹0</div><div class="stat-label">Total Invoiced</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--green)" id="inv-stat-collected">₹0</div><div class="stat-label">Collected</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--red)" id="inv-stat-due">₹0</div><div class="stat-label">Outstanding</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--gold)" id="inv-stat-overdue">0</div><div class="stat-label">Overdue Invoices</div></div>
+        </div>
+
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div class="card-title" style="margin:0">All Invoices</div>
+            <select id="invoice-status-filter" onchange="loadInvoices()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:13px;outline:none">
+              <option value="">All Statuses</option>
+              <option value="unpaid">Unpaid</option>
+              <option value="partial">Partial</option>
+              <option value="paid">Paid</option>
+              <option value="overdue">Overdue</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Invoice #</th><th>Client</th><th>App ID</th><th>Total</th><th>Paid</th><th>Due</th><th>Status</th><th>Due Date</th><th>Actions</th></tr></thead>
+              <tbody id="invoices-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAFF & ROLES -->
+      <div class="view" id="view-staff-management">
+        <div class="page-header">
+          <div><h2>Staff & Roles</h2><p>Appoint staff and assign their access level</p></div>
+          <button class="btn btn-primary btn-sm" onclick="openStaffModal()">+ Add Staff</button>
+        </div>
+        <div class="card">
+          <div class="card-title">All Staff Accounts</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead>
+              <tbody id="staff-table"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-title">Role Permissions</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;font-size:13px">
+            <div><strong style="color:var(--teal)">Sales</strong><p style="color:var(--text3);margin-top:4px">Leads, follow-ups, clients, messaging, packages</p></div>
+            <div><strong style="color:var(--blue)">Operations</strong><p style="color:var(--text3);margin-top:4px">Applications, documents, checklists, hotels</p></div>
+            <div><strong style="color:var(--gold)">Accounts</strong><p style="color:var(--text3);margin-top:4px">Invoices, payments, fee structure, exports</p></div>
+            <div><strong style="color:var(--red)">Super Admin</strong><p style="color:var(--text3);margin-top:4px">Full access to everything, including staff management</p></div>
+          </div>
+        </div>
+      </div>
+
       <div class="view" id="view-export">
         <div class="page-header">
           <div><h2>Export CRM</h2><p>Download all data as Excel / CSV for Microsoft 365</p></div>
@@ -968,10 +1118,14 @@ async function doLogin() {
     if (!r.ok) throw new Error('Bad credentials');
     const data = await r.json();
     TOKEN = data.token;
+    CURRENT_ROLE = data.role;
+    CURRENT_STAFF_ID = data.id;
     document.getElementById('user-name-display').textContent = data.name;
     document.getElementById('user-avatar').textContent = data.name[0].toUpperCase();
+    document.querySelector('.user-role').textContent = roleLabel(data.role);
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
+    applyRoleVisibility(data.role);
     loadDashboard();
     loadChecklistsForSelect();
     renderPackages();
@@ -980,6 +1134,45 @@ async function doLogin() {
     document.getElementById('login-error').style.display = 'block';
     document.getElementById('login-error').textContent = 'Invalid email or password';
   }
+}
+
+let CURRENT_ROLE = null;
+let CURRENT_STAFF_ID = null;
+
+function roleLabel(role) {
+  return {superadmin:'Super Admin', staff:'Staff', sales:'Sales', operations:'Operations', accounts:'Accounts'}[role] || role;
+}
+
+// Map each sidebar nav page to the role(s) allowed to see it.
+// superadmin/staff always see everything regardless of this map.
+const ROLE_PAGE_ACCESS = {
+  dashboard: null,            // everyone
+  applications: ['operations'],
+  clients: ['sales','operations'],
+  vfs: ['operations'],
+  packages: ['operations','sales'],
+  messages: ['sales','operations'],
+  'client-profile': ['sales','operations','accounts'],
+  hotels: ['operations'],
+  leads: ['sales'],
+  calendar: null,              // everyone
+  invoices: ['accounts'],
+  'staff-management': [],      // superadmin only
+  export: ['accounts','operations'],
+};
+
+function applyRoleVisibility(role) {
+  if (role === 'superadmin' || role === 'staff') {
+    document.querySelectorAll('.nav-item[data-page]').forEach(btn => btn.style.display = 'flex');
+    return;
+  }
+  document.querySelectorAll('.nav-item[data-page]').forEach(btn => {
+    const page = btn.getAttribute('data-page');
+    const allowed = ROLE_PAGE_ACCESS[page];
+    if (allowed === null) { btn.style.display = 'flex'; return; }
+    if (Array.isArray(allowed) && allowed.length === 0) { btn.style.display = 'none'; return; }
+    btn.style.display = (allowed && allowed.includes(role)) ? 'flex' : 'none';
+  });
 }
 
 function api(path, opts={}) {
@@ -995,7 +1188,8 @@ function api(path, opts={}) {
 // ── Navigation ────────────────────────────────────────────────────────────────
 const PAGE_TITLES = {
   'client-profile':'Client Profile', hotels:'Hotel CRM', dashboard:'Dashboard', applications:'Applications', clients:'Clients',
-  vfs:'VFS Checklists', packages:'Packages', messages:'Send Message', export:'Export CRM'
+  vfs:'VFS Checklists', packages:'Packages', messages:'Send Message', export:'Export CRM',
+  leads:'Leads & Follow-ups', calendar:'Calendar', invoices:'Invoices & Payments', 'staff-management':'Staff & Roles'
 };
 
 function nav(page) {
@@ -1007,14 +1201,18 @@ function nav(page) {
   document.querySelectorAll('.nav-item').forEach(btn => {
     if (btn.getAttribute('onclick') === "nav('" + page + "')") btn.classList.add('active');
   });
-  if      (page === 'dashboard')      loadDashboard();
-  else if (page === 'applications')   loadApplications();
-  else if (page === 'clients')        loadClients();
-  else if (page === 'messages')       loadRecentComms();
-  else if (page === 'packages')       renderPackages();
-  else if (page === 'vfs')            renderChecklists();
-  else if (page === 'client-profile') loadAllClients();
-  else if (page === 'hotels')         { loadHotels(); if (!msgClients.length) loadMsgClients(); }
+  if      (page === 'dashboard')        loadDashboard();
+  else if (page === 'applications')     loadApplications();
+  else if (page === 'clients')          loadClients();
+  else if (page === 'messages')         loadRecentComms();
+  else if (page === 'packages')         renderPackages();
+  else if (page === 'vfs')              renderChecklists();
+  else if (page === 'client-profile')   loadAllClients();
+  else if (page === 'hotels')           { loadHotels(); if (!msgClients.length) loadMsgClients(); }
+  else if (page === 'leads')            loadLeads();
+  else if (page === 'calendar')         loadCalendar();
+  else if (page === 'invoices')         loadInvoices();
+  else if (page === 'staff-management') loadStaff();
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
