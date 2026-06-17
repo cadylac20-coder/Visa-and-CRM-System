@@ -2993,364 +2993,6 @@ async function exportCRM(type) {
 // Init msg template
 updateMsgTemplate();
 
-
-// ── Hotel CRM ─────────────────────────────────────────────────────────────────
-let allHotels = { current: [], future: [] };
-let editingHotelId = null;
-
-async function loadHotels() {
-  try {
-    const data = await api('/admin/hotels/export/all');
-    allHotels.current = data.hotels.filter(h => !h.is_future);
-    allHotels.future  = data.hotels.filter(h =>  h.is_future);
-    renderHotelTables(allHotels.current, allHotels.future);
-  } catch(e) { console.error('Hotel load error:', e); }
-}
-
-function filterHotels() {
-  const q      = (document.getElementById('hotel-search')?.value || '').toLowerCase();
-  const status = document.getElementById('hotel-status-filter')?.value || '';
-  const time   = document.getElementById('hotel-time-filter')?.value || '';
-
-  function match(h) {
-    const txt = `${h.client_name} ${h.hotel_name} ${h.city} ${h.booking_ref || ''}`.toLowerCase();
-    if (q && !txt.includes(q)) return false;
-    if (status && h.booking_status !== status) return false;
-    return true;
-  }
-
-  let cur = allHotels.current.filter(match);
-  let fut = allHotels.future.filter(match);
-
-  if (time === 'current') fut = [];
-  if (time === 'future')  cur = [];
-
-  renderHotelTables(cur, fut);
-}
-
-function renderHotelTables(current, future) {
-  document.getElementById('hotels-current-table').innerHTML =
-    current.length ? current.map(h => hotelRow(h)).join('') :
-    '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:20px">No current bookings</td></tr>';
-
-  document.getElementById('hotels-future-table').innerHTML =
-    future.length ? future.map(h => hotelRow(h)).join('') :
-    '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:20px">No future bookings yet</td></tr>';
-}
-
-function hotelRow(h) {
-  const statusColor = {confirmed:'var(--green)', tentative:'var(--gold)', cancelled:'var(--red)'}[h.booking_status] || 'var(--text3)';
-  const price = h.total_price ? `₹${Number(h.total_price).toLocaleString('en-IN')}` : (h.price_per_night ? `₹${h.price_per_night}/night` : '—');
-  return `
-    <tr>
-      <td><strong>${h.client_name}</strong><div style="font-size:11px;color:var(--text3)">${h.client_phone || h.client_email}</div></td>
-      <td>${h.hotel_name}<div style="font-size:11px;color:var(--text3)">${h.room_type || ''}</div></td>
-      <td>${h.city}, ${h.country}</td>
-      <td style="font-family:var(--mono);font-size:12px">${h.check_in}</td>
-      <td style="font-family:var(--mono);font-size:12px">${h.check_out}</td>
-      <td style="font-size:12px;color:var(--text3)">${h.booking_ref || '—'}</td>
-      <td><span style="color:${statusColor};font-size:12px;font-weight:600;text-transform:capitalize">${h.booking_status}</span></td>
-      <td style="font-size:13px;font-weight:600">${price}</td>
-      <td>
-        <button class="btn btn-ghost btn-sm" onclick="editHotel(${h.id})">Edit</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteHotel(${h.id})">Del</button>
-      </td>
-    </tr>`;
-}
-
-function openHotelModal(clientId) {
-  editingHotelId = null;
-  document.getElementById('hotel-modal-title').textContent = 'Add Hotel Booking';
-  // Clear form
-  ['hotel-name','hotel-city','hotel-country','hotel-ref','hotel-room','hotel-ppn','hotel-total','hotel-notes','hotel-app-id'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  document.getElementById('hotel-checkin').value  = '';
-  document.getElementById('hotel-checkout').value = '';
-  document.getElementById('hotel-status').value   = 'confirmed';
-  document.querySelector('input[name="hotel-type"][value="0"]').checked = true;
-  // Populate client dropdown
-  populateHotelClientDropdown(clientId);
-  openModal('hotel-modal');
-}
-
-function editHotel(id) {
-  const all = [...allHotels.current, ...allHotels.future];
-  const h   = all.find(h => h.id === id);
-  if (!h) return;
-  editingHotelId = id;
-  document.getElementById('hotel-modal-title').textContent = 'Edit Hotel Booking';
-  populateHotelClientDropdown(h.client_id);
-  document.getElementById('hotel-client-id').value = h.client_id;
-  document.getElementById('hotel-app-id').value    = h.app_id || '';
-  document.getElementById('hotel-name').value      = h.hotel_name;
-  document.getElementById('hotel-city').value      = h.city;
-  document.getElementById('hotel-country').value   = h.country;
-  document.getElementById('hotel-checkin').value   = h.check_in;
-  document.getElementById('hotel-checkout').value  = h.check_out;
-  document.getElementById('hotel-ref').value       = h.booking_ref || '';
-  document.getElementById('hotel-room').value      = h.room_type || '';
-  document.getElementById('hotel-ppn').value       = h.price_per_night || '';
-  document.getElementById('hotel-total').value     = h.total_price || '';
-  document.getElementById('hotel-notes').value     = h.notes || '';
-  document.getElementById('hotel-status').value    = h.booking_status;
-  document.querySelector(`input[name="hotel-type"][value="${h.is_future}"]`).checked = true;
-  openModal('hotel-modal');
-}
-
-function populateHotelClientDropdown(selectedId) {
-  const sel = document.getElementById('hotel-client-id');
-  sel.innerHTML = '<option value="">Select client...</option>' +
-    msgClients.map(c => `<option value="${c.id}" ${c.id == selectedId ? 'selected' : ''}>${c.name} — ${c.email}</option>`).join('');
-}
-
-function calcHotelTotal() {
-  const ppn    = parseFloat(document.getElementById('hotel-ppn').value) || 0;
-  const cin    = document.getElementById('hotel-checkin').value;
-  const cout   = document.getElementById('hotel-checkout').value;
-  if (ppn && cin && cout) {
-    const nights = Math.ceil((new Date(cout) - new Date(cin)) / 86400000);
-    if (nights > 0) document.getElementById('hotel-total').value = (ppn * nights).toFixed(0);
-  }
-}
-
-async function saveHotel() {
-  const clientId = document.getElementById('hotel-client-id').value;
-  const name     = document.getElementById('hotel-name').value.trim();
-  const city     = document.getElementById('hotel-city').value.trim();
-  const country  = document.getElementById('hotel-country').value.trim();
-  const checkIn  = document.getElementById('hotel-checkin').value;
-  const checkOut = document.getElementById('hotel-checkout').value;
-
-  if (!clientId || !name || !city || !checkIn || !checkOut) {
-    return toast('Fill client, hotel name, city and dates','error');
-  }
-
-  const payload = {
-    client_id:       parseInt(clientId),
-    app_id:          document.getElementById('hotel-app-id').value.trim() || null,
-    hotel_name:      name,
-    city,
-    country:         country || city,
-    check_in:        checkIn,
-    check_out:       checkOut,
-    booking_ref:     document.getElementById('hotel-ref').value.trim(),
-    booking_status:  document.getElementById('hotel-status').value,
-    room_type:       document.getElementById('hotel-room').value.trim(),
-    price_per_night: parseFloat(document.getElementById('hotel-ppn').value) || null,
-    total_price:     parseFloat(document.getElementById('hotel-total').value) || null,
-    currency:        'INR',
-    notes:           document.getElementById('hotel-notes').value.trim(),
-    is_future:       parseInt(document.querySelector('input[name="hotel-type"]:checked').value),
-  };
-
-  try {
-    if (editingHotelId) {
-      await api(`/admin/hotel/${editingHotelId}`, {method:'PUT', body: JSON.stringify(payload)});
-      toast('Hotel booking updated');
-    } else {
-      await api('/admin/hotel', {method:'POST', body: JSON.stringify(payload)});
-      toast('Hotel booking added');
-    }
-    closeModal('hotel-modal');
-    loadHotels();
-  } catch(e) { toast('Error saving hotel','error'); }
-}
-
-async function deleteHotel(id) {
-  if (!confirm('Delete this hotel booking?')) return;
-  try {
-    await api(`/admin/hotel/${id}`, {method:'DELETE'});
-    toast('Deleted');
-    loadHotels();
-  } catch(e) { toast('Error deleting','error'); }
-}
-
-async function exportHotelsCRM() {
-  try {
-    const data = await api('/admin/hotels/export/all');
-    const hotels = data.hotels;
-    if (!hotels.length) return toast('No hotel records to export','error');
-
-    const headers = ['Client','Email','Phone','Hotel','City','Country','Check-in','Check-out','Nights','Room','Ref','Status','Price/Night','Total (INR)','Type','Notes'];
-    const rows = hotels.map(h => {
-      const nights = h.check_in && h.check_out
-        ? Math.ceil((new Date(h.check_out) - new Date(h.check_in)) / 86400000)
-        : '';
-      return [
-        h.client_name, h.client_email, h.client_phone || '',
-        h.hotel_name, h.city, h.country,
-        h.check_in, h.check_out, nights,
-        h.room_type || '', h.booking_ref || '',
-        h.booking_status,
-        h.price_per_night || '', h.total_price || '',
-        h.is_future ? 'Future' : 'Current/Past',
-        h.notes || ''
-      ];
-    });
-
-    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], {type:'text/csv'});
-    const a    = document.createElement('a');
-    a.href     = URL.createObjectURL(blob);
-    a.download = `mkov_hotels_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    toast('Hotel CRM exported');
-  } catch(e) { toast('Export failed','error'); }
-}
-
-// ── Passport OCR — extract details from uploaded scan ─────────────────────────
-async function extractPassportDetails(clientId) {
-  const btn = document.getElementById(`ocr-btn-${clientId}`);
-  if (btn) { btn.textContent = 'Extracting...'; btn.disabled = true; }
-
-  try {
-    const data = await api(`/admin/client/${clientId}/extract-passport`, {method:'POST'});
-
-    if (data.status === 'ocr_unavailable') {
-      toast('OCR not configured — add pytesseract to Render', 'error');
-      if (btn) { btn.textContent = 'Extract Details'; btn.disabled = false; }
-      return;
-    }
-
-    if (data.status === 'error') {
-      toast('Could not read passport — try a clearer scan', 'error');
-      if (btn) { btn.textContent = 'Extract Details'; btn.disabled = false; }
-      return;
-    }
-
-    const d = data.data;
-    // Show extracted data in a modal for admin to confirm before saving
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay show';
-    modal.style.zIndex = '200';
-    modal.innerHTML = `
-      <div class="modal" style="max-width:500px">
-        <div class="modal-header">
-          <span class="modal-title">Extracted Passport Details</span>
-          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
-        </div>
-        <div class="modal-body">
-          <div class="alert-info" style="background:rgba(79,142,247,0.1);border-left:3px solid var(--blue);padding:10px 14px;border-radius:var(--r);margin-bottom:16px;font-size:12px;color:var(--blue)">
-            Review extracted data before saving. OCR may have minor errors — correct if needed.
-          </div>
-          <div class="form-grid">
-            ${d.surname    ? `<div class="form-group"><label>Surname</label><input type="text" id="ocr-surname" value="${d.surname}"></div>` : ''}
-            ${d.given_name ? `<div class="form-group"><label>Given Names</label><input type="text" id="ocr-given" value="${d.given_name}"></div>` : ''}
-            ${d.passport_number ? `<div class="form-group"><label>Passport Number</label><input type="text" id="ocr-pnum" value="${d.passport_number}"></div>` : ''}
-            ${d.date_of_birth ? `<div class="form-group"><label>Date of Birth</label><input type="text" id="ocr-dob" value="${d.date_of_birth}"></div>` : ''}
-            ${d.expiry_date ? `<div class="form-group"><label>Expiry Date</label><input type="text" id="ocr-exp" value="${d.expiry_date}"></div>` : ''}
-            ${d.nationality ? `<div class="form-group"><label>Nationality</label><input type="text" id="ocr-nat" value="${d.nationality}"></div>` : ''}
-            ${d.sex ? `<div class="form-group"><label>Sex</label><input type="text" id="ocr-sex" value="${d.sex}"></div>` : ''}
-          </div>
-          ${!d.surname && !d.passport_number ? `
-            <div style="margin-top:12px">
-              <p style="font-size:12px;color:var(--text3);margin-bottom:8px">Could not auto-extract structured data. Raw OCR text:</p>
-              <pre style="background:var(--surface2);padding:12px;border-radius:var(--r);font-size:11px;overflow:auto;max-height:150px;white-space:pre-wrap">${(d.raw_text || '').substring(0, 500)}</pre>
-            </div>` : ''}
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Discard</button>
-          <button class="btn btn-primary" onclick="saveExtractedPassport(${clientId}, this.closest('.modal-overlay'))">Save to Client Notes</button>
-        </div>
-      </div>`;
-    document.body.appendChild(modal);
-  } catch(e) {
-    toast('Extraction failed','error');
-  } finally {
-    if (btn) { btn.textContent = 'Extract Details'; btn.disabled = false; }
-  }
-}
-
-async function saveExtractedPassport(clientId, modalEl) {
-  // Build a notes string from all the filled fields
-  const fields = [
-    {id:'ocr-surname',  label:'Surname'},
-    {id:'ocr-given',    label:'Given Name'},
-    {id:'ocr-pnum',     label:'Passport No'},
-    {id:'ocr-dob',      label:'DOB'},
-    {id:'ocr-exp',      label:'Expiry'},
-    {id:'ocr-nat',      label:'Nationality'},
-    {id:'ocr-sex',      label:'Sex'},
-  ];
-  const parts = [];
-  fields.forEach(f => {
-    const el = document.getElementById(f.id);
-    if (el && el.value.trim()) parts.push(`${f.label}: ${el.value.trim()}`);
-  });
-  if (!parts.length) {
-    toast('No data to save','error');
-    return;
-  }
-  const note = `[Passport OCR — ${new Date().toLocaleDateString()}] ${parts.join(' | ')}`;
-  try {
-    // Save as team note on first application, or just update client details
-    await api(`/admin/client/${clientId}`, {
-      method: 'PUT',
-      body: JSON.stringify({name: document.getElementById('cp-name-display')?.textContent || ''})
-    });
-    // Store as internal note
-    const apps = (await api(`/admin/client/${clientId}`)).applications;
-    if (apps.length) {
-      await api(`/admin/application/${apps[0].app_id}/team-note`, {
-        method: 'POST',
-        body: JSON.stringify({note})
-      });
-    }
-    modalEl.remove();
-    toast('Passport details saved to team notes');
-    loadClientProfile(clientId);
-  } catch(e) { toast('Save failed','error'); }
-}
-
-// hotel nav handled in main nav()
-
-// ── Add "Extract Details" button to passport section in client profile ────────
-// Patch loadClientProfile to inject OCR button
-
-
-
-
-// ── CRM Full Export (enhanced with hotels) ────────────────────────────────────
-async function exportCRM(type) {
-  try {
-    const data = await api('/admin/dashboard');
-    let csv = '';
-
-    if (type === 'full' || type === 'applications') {
-      const headers = ['App ID','Client','Email','Phone','Destination','Visa Type','Status','Progress %','Travel Date','Created'];
-      const rows = data.applications.map(a => [
-        a.app_id, a.client_name, a.client_email, a.client_phone || '',
-        a.destination, a.visa_type, a.status, a.progress,
-        a.travel_date || '', a.created_at?.split('T')[0] || ''
-      ]);
-      csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-    } else if (type === 'clients') {
-      const seen = new Set();
-      const clients = data.applications.filter(a => { if(seen.has(a.client_email))return false; seen.add(a.client_email); return true; });
-      csv = [['Name','Email','Phone','Applications'],...clients.map(c=>[
-        c.client_name,c.client_email,c.client_phone||'',
-        data.applications.filter(a=>a.client_email===c.client_email).length
-      ])].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-    } else if (type === 'comms') {
-      toast('Communication log export — use Hotel CRM export for hotels','error');
-      return;
-    }
-
-    if (!csv) { toast('No data','error'); return; }
-    const blob = new Blob([csv], {type:'text/csv'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `mkov_${type}_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    toast('Downloaded');
-  } catch(e) { toast('Export failed','error'); }
-}
-
-// Init msg template
-updateMsgTemplate();
-
 // ── Passport viewer ───────────────────────────────────────────────────────────
 async function viewPassport(clientId) {
   if (!clientId) return toast('No client ID found','error');
@@ -3391,7 +3033,660 @@ function downloadPassport(b64, filename) {
   link.download = filename || 'passport.jpg';
   link.click();
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// LEADS & FOLLOW-UPS
+// ══════════════════════════════════════════════════════════════════════════
+let allLeads = [];
+
+async function loadLeads() {
+  try {
+    const statusFilter = document.getElementById('lead-status-filter')?.value || '';
+    const data = await api(`/admin/leads${statusFilter ? '?status=' + statusFilter : ''}`);
+    allLeads = data.leads;
+    const s = data.stats;
+    document.getElementById('lead-stat-new').textContent       = s.new;
+    document.getElementById('lead-stat-contacted').textContent = s.contacted;
+    document.getElementById('lead-stat-qualified').textContent = s.qualified;
+    document.getElementById('lead-stat-quoted').textContent    = s.quoted;
+    document.getElementById('lead-stat-won').textContent       = s.won;
+    document.getElementById('lead-stat-lost').textContent      = s.lost;
+    document.getElementById('nav-leads-count').textContent     = s.new;
+
+    document.getElementById('leads-table').innerHTML = allLeads.map(l => `
+      <tr class="clickable" onclick="openLeadDetail(${l.id})">
+        <td><strong>${l.name}</strong></td>
+        <td style="font-size:12px">${l.phone || l.email || '—'}</td>
+        <td>${l.destination || '—'}</td>
+        <td style="text-transform:capitalize;font-size:12px;color:var(--text3)">${l.source.replace('_',' ')}</td>
+        <td><span class="status status-${leadStatusClass(l.status)}">${l.status}</span></td>
+        <td style="font-size:12px">${l.next_followup ? formatDateTime(l.next_followup) : '<span style="color:var(--text3)">none</span>'}</td>
+        <td style="font-size:12px">${l.assigned_name || '<span style="color:var(--text3)">unassigned</span>'}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openLeadDetail(${l.id})">Open</button></td>
+      </tr>
+    `).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text3)">No leads yet</td></tr>';
+
+    loadDueFollowups();
+  } catch(e) { console.error(e); }
+}
+
+function leadStatusClass(status) {
+  return {new:'pending', contacted:'review', qualified:'docs_received', quoted:'submitted', won:'approved', lost:'rejected'}[status] || 'pending';
+}
+
+function formatDateTime(s) {
+  if (!s) return '—';
+  const d = new Date(s.replace(' ', 'T'));
+  return d.toLocaleDateString('en-IN', {day:'numeric', month:'short'}) + ' ' + d.toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'});
+}
+
+async function loadDueFollowups() {
+  try {
+    const data = await api('/admin/followups/due');
+    const list = document.getElementById('due-followups-list');
+    if (!data.followups.length) {
+      list.innerHTML = '<p style="color:var(--text3);font-size:13px">No follow-ups due. You are all caught up!</p>';
+      return;
+    }
+    list.innerHTML = data.followups.map(f => `
+      <div class="activity-item">
+        <div class="activity-dot" style="background:${new Date(f.due_at) < new Date() ? 'var(--red)' : 'var(--gold)'}"></div>
+        <div class="activity-content">
+          <div class="activity-action">${f.lead_name} — ${f.destination || 'no destination'}</div>
+          <div class="activity-detail">${f.note || ''} · via ${f.channel} · ${f.lead_phone || ''}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="activity-time">${formatDateTime(f.due_at)}</span>
+          <button class="btn btn-ghost btn-sm" onclick="completeFollowupQuick(${f.id})">Done</button>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {}
+}
+
+async function completeFollowupQuick(id) {
+  try {
+    await api(`/admin/followup/${id}/complete`, {method:'POST'});
+    toast('Follow-up marked done');
+    loadDueFollowups();
+  } catch(e) { toast('Error','error'); }
+}
+
+function openLeadModal() {
+  document.getElementById('lead-modal-title').textContent = 'New Lead';
+  ['lead-name','lead-phone','lead-email','lead-destination','lead-notes'].forEach(id => document.getElementById(id).value = '');
+  populateStaffDropdown('lead-assigned-to');
+  openModal('lead-modal');
+}
+
+function populateStaffDropdown(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  api('/admin/staff').then(data => {
+    sel.innerHTML = '<option value="">Unassigned</option>' +
+      data.staff.filter(s => s.active).map(s => `<option value="${s.id}">${s.name} (${roleLabel(s.role)})</option>`).join('');
+  }).catch(() => {});
+}
+
+async function saveLead() {
+  const name = document.getElementById('lead-name').value.trim();
+  if (!name) return toast('Name is required','error');
+  const body = {
+    name,
+    phone: document.getElementById('lead-phone').value.trim(),
+    email: document.getElementById('lead-email').value.trim(),
+    destination: document.getElementById('lead-destination').value.trim(),
+    visa_type: document.getElementById('lead-visa-type').value,
+    source: document.getElementById('lead-source').value,
+    notes: document.getElementById('lead-notes').value.trim(),
+    assigned_to: document.getElementById('lead-assigned-to').value || null,
+  };
+  try {
+    await api('/admin/leads', {method:'POST', body: JSON.stringify(body)});
+    closeModal('lead-modal');
+    toast('Lead created');
+    loadLeads();
+  } catch(e) { toast('Error creating lead','error'); }
+}
+
+async function openLeadDetail(leadId) {
+  try {
+    const data = await api(`/admin/lead/${leadId}`);
+    const l = data.lead;
+    document.getElementById('lead-detail-title').textContent = l.name;
+    document.getElementById('lead-detail-body').innerHTML = `
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <select id="ld-status-select" onchange="updateLeadStatus(${leadId}, this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:13px;outline:none">
+          ${['new','contacted','qualified','quoted','won','lost'].map(s => `<option value="${s}" ${s===l.status?'selected':''}>${s}</option>`).join('')}
+        </select>
+        ${l.status === 'won' && !l.converted_client_id ? `<button class="btn btn-primary btn-sm" onclick="openConvertModal(${leadId})">Convert to Client</button>` : ''}
+        ${l.converted_client_id ? `<span class="status status-approved">Converted ✓</span>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="deleteLeadConfirm(${leadId})">Delete Lead</button>
+      </div>
+      <div style="display:grid;gap:8px;font-size:13px;margin-bottom:16px">
+        ${infoRow('Phone', l.phone || '—')}
+        ${infoRow('Email', l.email || '—')}
+        ${infoRow('Destination', l.destination || '—')}
+        ${infoRow('Visa Type', l.visa_type || '—')}
+        ${infoRow('Source', l.source.replace('_',' '))}
+        ${infoRow('Notes', l.notes || '—')}
+      </div>
+      <div style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
+        <strong style="font-size:13px">Follow-ups</strong>
+        <button class="btn btn-ghost btn-sm" onclick="openAddFollowup(${leadId})">+ Add Follow-up</button>
+      </div>
+      <div id="lead-followups-list">
+        ${data.followups.map(f => `
+          <div class="activity-item">
+            <div class="activity-dot" style="background:${f.status==='done'?'var(--green)':f.status==='missed'?'var(--red)':'var(--gold)'}"></div>
+            <div class="activity-content">
+              <div class="activity-action">${f.note || '(no note)'} <span style="color:var(--text3)">· ${f.channel}</span></div>
+              <div class="activity-detail">${f.status}</div>
+            </div>
+            <div class="activity-time">${formatDateTime(f.due_at)}</div>
+          </div>
+        `).join('') || '<p style="color:var(--text3);font-size:12px">No follow-ups scheduled.</p>'}
+      </div>
+    `;
+    openModal('lead-detail-modal');
+  } catch(e) { toast('Error loading lead','error'); }
+}
+
+async function updateLeadStatus(leadId, status) {
+  try {
+    await api(`/admin/lead/${leadId}`, {method:'PUT', body: JSON.stringify({status})});
+    toast('Status updated');
+    loadLeads();
+  } catch(e) { toast('Error','error'); }
+}
+
+async function deleteLeadConfirm(leadId) {
+  if (!confirm('Delete this lead and all its follow-ups?')) return;
+  try {
+    await api(`/admin/lead/${leadId}`, {method:'DELETE'});
+    closeModal('lead-detail-modal');
+    toast('Lead deleted');
+    loadLeads();
+  } catch(e) { toast('Error','error'); }
+}
+
+function openAddFollowup(leadId) {
+  const note = prompt('Follow-up note:');
+  if (note === null) return;
+  const dueIn = prompt('Due in how many hours from now? (e.g. 24)', '24');
+  if (!dueIn) return;
+  const due = new Date(Date.now() + parseInt(dueIn) * 3600000).toISOString().slice(0,19).replace('T',' ');
+  api(`/admin/lead/${leadId}/followup`, {
+    method:'POST', body: JSON.stringify({lead_id: leadId, due_at: due, note, channel: 'call'})
+  }).then(() => { toast('Follow-up added'); openLeadDetail(leadId); }).catch(() => toast('Error','error'));
+}
+
+function openConvertModal(leadId) {
+  const password = prompt('Set a client portal password for this new client:');
+  if (!password) return;
+  api(`/admin/lead/${leadId}/convert`, {method:'POST', body: JSON.stringify({password})})
+    .then(data => {
+      toast(`Converted! New application: ${data.app_id}`);
+      closeModal('lead-detail-modal');
+      loadLeads();
+    }).catch(e => toast('Error converting lead','error'));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// CALENDAR
+// ══════════════════════════════════════════════════════════════════════════
+let calendarCursor = new Date();
+let calendarEvents = [];
+
+async function loadCalendar() {
+  renderCalendarGrid();
+  loadCalendarUpcoming();
+}
+
+function calendarShiftMonth(delta) {
+  if (delta === 0) { calendarCursor = new Date(); }
+  else { calendarCursor.setMonth(calendarCursor.getMonth() + delta); }
+  renderCalendarGrid();
+}
+
+async function renderCalendarGrid() {
+  const year  = calendarCursor.getFullYear();
+  const month = calendarCursor.getMonth();
+  document.getElementById('calendar-month-label').textContent =
+    calendarCursor.toLocaleDateString('en-IN', {month:'long', year:'numeric'});
+
+  const firstDay   = new Date(year, month, 1);
+  const lastDay    = new Date(year, month + 1, 0);
+  const startPad   = firstDay.getDay();
+  const totalDays  = lastDay.getDate();
+
+  const rangeStart = new Date(year, month, 1 - startPad).toISOString().slice(0,10);
+  const rangeEnd   = new Date(year, month + 1, 6).toISOString().slice(0,10);
+
+  try {
+    const data = await api(`/admin/calendar?start=${rangeStart}&end=${rangeEnd}`);
+    calendarEvents = data.events;
+  } catch(e) { calendarEvents = []; }
+
+  const grid = document.getElementById('calendar-grid');
+  let html = '';
+  ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => {
+    html += `<div style="text-align:center;font-size:11px;font-weight:600;color:var(--text3);padding:4px">${d}</div>`;
+  });
+  for (let i = 0; i < startPad; i++) html += '<div></div>';
+
+  const todayStr = new Date().toISOString().slice(0,10);
+
+  for (let day = 1; day <= totalDays; day++) {
+    const dateObj = new Date(year, month, day);
+    const dateStr = dateObj.toISOString().slice(0,10);
+    const dayEvents = calendarEvents.filter(e => (e.start_at || '').slice(0,10) === dateStr);
+    const isToday = dateStr === todayStr;
+    html += `
+      <div style="min-height:80px;background:var(--surface2);border:1px solid ${isToday?'var(--teal)':'var(--border)'};border-radius:var(--r);padding:6px;cursor:pointer" onclick="openCalendarModal('${dateStr}')">
+        <div style="font-size:11px;font-weight:${isToday?'700':'500'};color:${isToday?'var(--teal)':'var(--text2)'};margin-bottom:4px">${day}</div>
+        ${dayEvents.slice(0,3).map(e => `
+          <div onclick="event.stopPropagation();viewCalendarEvent(${e.id})" style="font-size:10px;background:${e.color}22;color:${e.color};border-left:2px solid ${e.color};padding:2px 4px;border-radius:2px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.title}</div>
+        `).join('')}
+        ${dayEvents.length > 3 ? `<div style="font-size:9px;color:var(--text3)">+${dayEvents.length-3} more</div>` : ''}
+      </div>`;
+  }
+  grid.innerHTML = html;
+}
+
+async function loadCalendarUpcoming() {
+  try {
+    const data = await api('/admin/calendar/upcoming');
+    document.getElementById('calendar-upcoming-list').innerHTML = data.events.map(e => `
+      <div class="activity-item">
+        <div class="activity-dot" style="background:${e.color}"></div>
+        <div class="activity-content">
+          <div class="activity-action">${e.title}</div>
+          <div class="activity-detail">${e.client_name || e.lead_name || ''} ${e.location ? '· ' + e.location : ''}</div>
+        </div>
+        <div class="activity-time">${formatDateTime(e.start_at)}</div>
+      </div>
+    `).join('') || '<p style="color:var(--text3);font-size:13px">No upcoming events.</p>';
+  } catch(e) {}
+}
+
+function openCalendarModal(prefillDate) {
+  document.getElementById('cal-title').value = '';
+  document.getElementById('cal-app-id').value = '';
+  document.getElementById('cal-location').value = '';
+  document.getElementById('cal-notes').value = '';
+  document.getElementById('cal-end').value = '';
+  if (prefillDate) {
+    document.getElementById('cal-start').value = prefillDate + 'T10:00';
+  } else {
+    document.getElementById('cal-start').value = '';
+  }
+  openModal('calendar-modal');
+}
+
+async function saveCalendarEvent() {
+  const title = document.getElementById('cal-title').value.trim();
+  const start = document.getElementById('cal-start').value;
+  if (!title || !start) return toast('Title and start date are required','error');
+  const body = {
+    title,
+    event_type: document.getElementById('cal-type').value,
+    start_at: start.replace('T',' '),
+    end_at: document.getElementById('cal-end').value ? document.getElementById('cal-end').value.replace('T',' ') : null,
+    app_id: document.getElementById('cal-app-id').value.trim() || null,
+    location: document.getElementById('cal-location').value.trim(),
+    notes: document.getElementById('cal-notes').value.trim(),
+    color: document.getElementById('cal-color').value,
+  };
+  try {
+    await api('/admin/calendar', {method:'POST', body: JSON.stringify(body)});
+    closeModal('calendar-modal');
+    toast('Event added');
+    renderCalendarGrid();
+    loadCalendarUpcoming();
+  } catch(e) { toast('Error saving event','error'); }
+}
+
+function viewCalendarEvent(eventId) {
+  const e = calendarEvents.find(ev => ev.id === eventId);
+  if (!e) return;
+  if (confirm(`${e.title}\n${formatDateTime(e.start_at)}\n${e.location || ''}\n${e.notes || ''}\n\nDelete this event?`)) {
+    api(`/admin/calendar/${eventId}`, {method:'DELETE'}).then(() => {
+      toast('Event deleted');
+      renderCalendarGrid();
+      loadCalendarUpcoming();
+    });
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// INVOICES & PAYMENTS
+// ══════════════════════════════════════════════════════════════════════════
+let invoiceLineItemCount = 0;
+let allInvoices = [];
+
+async function loadInvoices() {
+  try {
+    const statusFilter = document.getElementById('invoice-status-filter')?.value || '';
+    const data = await api(`/admin/invoices${statusFilter ? '?status=' + statusFilter : ''}`);
+    allInvoices = data.invoices;
+    const s = data.stats;
+    document.getElementById('inv-stat-invoiced').textContent  = '₹' + s.total_invoiced.toLocaleString('en-IN');
+    document.getElementById('inv-stat-collected').textContent = '₹' + s.total_collected.toLocaleString('en-IN');
+    document.getElementById('inv-stat-due').textContent       = '₹' + s.total_due.toLocaleString('en-IN');
+    document.getElementById('inv-stat-overdue').textContent   = s.overdue_count;
+    document.getElementById('nav-due-count').textContent      = s.unpaid_count;
+
+    document.getElementById('invoices-table').innerHTML = allInvoices.map(inv => `
+      <tr class="clickable" onclick="openInvoiceDetail(${inv.id})">
+        <td><code style="color:var(--teal);font-family:var(--mono)">${inv.invoice_no}</code></td>
+        <td>${inv.client_name}</td>
+        <td style="font-size:12px;color:var(--text3)">${inv.app_id || '—'}</td>
+        <td>₹${Number(inv.total).toLocaleString('en-IN')}</td>
+        <td style="color:var(--green)">₹${Number(inv.amount_paid).toLocaleString('en-IN')}</td>
+        <td style="color:${inv.balance_due > 0 ? 'var(--red)' : 'var(--text3)'}">₹${Number(inv.balance_due).toLocaleString('en-IN')}</td>
+        <td><span class="status status-${invoiceStatusClass(inv.status)}">${inv.status}</span></td>
+        <td style="font-size:12px">${inv.due_date || '—'}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openInvoiceDetail(${inv.id})">Open</button></td>
+      </tr>
+    `).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--text3)">No invoices yet</td></tr>';
+  } catch(e) { console.error(e); }
+}
+
+function invoiceStatusClass(status) {
+  return {unpaid:'pending', partial:'review', paid:'approved', overdue:'rejected', cancelled:'rejected'}[status] || 'pending';
+}
+
+function openInvoiceModal() {
+  document.getElementById('inv-discount').value = 0;
+  document.getElementById('inv-tax').value = 0;
+  document.getElementById('inv-app-id').value = '';
+  document.getElementById('inv-due-date').value = '';
+  document.getElementById('inv-notes').value = '';
+  document.getElementById('invoice-line-items').innerHTML = '';
+  invoiceLineItemCount = 0;
+  addInvoiceLineItem();
+  populateInvoiceClientDropdown();
+  openModal('invoice-modal');
+}
+
+function populateInvoiceClientDropdown() {
+  const sel = document.getElementById('inv-client-id');
+  api('/admin/clients').then(data => {
+    sel.innerHTML = '<option value="">Select client...</option>' +
+      data.clients.map(c => `<option value="${c.id}">${c.name} — ${c.email}</option>`).join('');
+  }).catch(() => {});
+}
+
+function addInvoiceLineItem(label, qty, price) {
+  const idx = invoiceLineItemCount++;
+  const div = document.createElement('div');
+  div.className = 'checklist-item';
+  div.id = `li-${idx}`;
+  div.innerHTML = `
+    <input type="text" placeholder="Description" id="li-label-${idx}" value="${label||''}" style="flex:2" oninput="recalcInvoiceTotal()">
+    <input type="number" placeholder="Qty" id="li-qty-${idx}" value="${qty||1}" style="width:60px" oninput="recalcInvoiceTotal()">
+    <input type="number" placeholder="Price" id="li-price-${idx}" value="${price||''}" style="width:90px" oninput="recalcInvoiceTotal()">
+    <button class="remove-item" onclick="document.getElementById('li-${idx}').remove();recalcInvoiceTotal()">×</button>`;
+  document.getElementById('invoice-line-items').appendChild(div);
+  recalcInvoiceTotal();
+}
+
+function getInvoiceLineItems() {
+  const items = [];
+  document.querySelectorAll('#invoice-line-items .checklist-item').forEach(row => {
+    const idx = row.id.split('-')[1];
+    const label = document.getElementById(`li-label-${idx}`)?.value.trim();
+    const qty   = parseFloat(document.getElementById(`li-qty-${idx}`)?.value) || 0;
+    const price = parseFloat(document.getElementById(`li-price-${idx}`)?.value) || 0;
+    if (label) items.push({label, qty, unit_price: price});
+  });
+  return items;
+}
+
+function recalcInvoiceTotal() {
+  const items     = getInvoiceLineItems();
+  const subtotal  = items.reduce((sum, i) => sum + i.qty * i.unit_price, 0);
+  const discount  = parseFloat(document.getElementById('inv-discount')?.value) || 0;
+  const taxPct    = parseFloat(document.getElementById('inv-tax')?.value) || 0;
+  const afterDisc = Math.max(0, subtotal - discount);
+  const taxAmt    = afterDisc * (taxPct / 100);
+  const total     = afterDisc + taxAmt;
+  const display = document.getElementById('invoice-total-display');
+  if (display) {
+    display.innerHTML = `
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Discount</span><span style="color:var(--red)">-₹${discount.toFixed(2)}</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Tax (${taxPct}%)</span><span>₹${taxAmt.toFixed(2)}</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-weight:700"><span>Total</span><span style="color:var(--green)">₹${total.toFixed(2)}</span></div>`;
+  }
+}
+
+async function saveInvoice() {
+  const clientId = document.getElementById('inv-client-id').value;
+  const items     = getInvoiceLineItems();
+  if (!clientId) return toast('Select a client','error');
+  if (!items.length) return toast('Add at least one line item','error');
+  const body = {
+    client_id: parseInt(clientId),
+    app_id: document.getElementById('inv-app-id').value.trim() || null,
+    line_items: items,
+    discount: parseFloat(document.getElementById('inv-discount').value) || 0,
+    tax_percent: parseFloat(document.getElementById('inv-tax').value) || 0,
+    due_date: document.getElementById('inv-due-date').value || null,
+    notes: document.getElementById('inv-notes').value.trim(),
+  };
+  try {
+    const result = await api('/admin/invoice', {method:'POST', body: JSON.stringify(body)});
+    closeModal('invoice-modal');
+    toast(`Invoice ${result.invoice_no} created — ₹${result.total}`);
+    loadInvoices();
+  } catch(e) { toast('Error creating invoice','error'); }
+}
+
+let currentInvoiceId = null;
+
+async function openInvoiceDetail(invoiceId) {
+  currentInvoiceId = invoiceId;
+  try {
+    const data = await api(`/admin/invoice/${invoiceId}`);
+    const inv = data.invoice;
+    document.getElementById('invoice-detail-title').textContent = inv.invoice_no;
+    document.getElementById('invoice-detail-body').innerHTML = `
+      <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+        <div>
+          <div style="font-weight:600">${inv.client_name}</div>
+          <div style="font-size:12px;color:var(--text3)">${inv.client_email} · ${inv.client_phone||''}</div>
+        </div>
+        <span class="status status-${invoiceStatusClass(inv.status)}">${inv.status}</span>
+      </div>
+      <div class="table-wrap" style="margin-bottom:16px">
+        <table>
+          <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Amount</th></tr></thead>
+          <tbody>${inv.line_items.map(li => `<tr><td>${li.label}</td><td>${li.qty}</td><td>₹${li.unit_price}</td><td>₹${li.amount}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div style="background:var(--surface2);border-radius:var(--r);padding:12px;font-size:13px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Subtotal</span><span>₹${inv.subtotal}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Discount</span><span>-₹${inv.discount}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Tax</span><span>₹${inv.tax_amount}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-weight:700"><span>Total</span><span>₹${inv.total}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px;color:var(--green)"><span>Paid</span><span>₹${inv.amount_paid}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px;color:var(--red);font-weight:600"><span>Balance Due</span><span>₹${inv.balance_due}</span></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <strong style="font-size:13px">Payment History</strong>
+        ${inv.balance_due > 0 ? `<button class="btn btn-primary btn-sm" onclick="openPaymentModal(${invoiceId})">Record Payment</button>` : ''}
+      </div>
+      <div>
+        ${data.payments.map(p => `
+          <div class="comm-item">
+            <div class="comm-channel email">₹</div>
+            <div class="comm-body">
+              <div class="comm-title">₹${p.amount} via ${p.method}${p.reference ? ' · ' + p.reference : ''}</div>
+              <div class="comm-time">${p.paid_at}</div>
+            </div>
+          </div>
+        `).join('') || '<p style="color:var(--text3);font-size:12px">No payments recorded yet.</p>'}
+      </div>
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button class="btn btn-danger btn-sm" onclick="deleteInvoiceConfirm(${invoiceId})">Delete Invoice</button>
+      </div>
+    `;
+    openModal('invoice-detail-modal');
+  } catch(e) { toast('Error loading invoice','error'); }
+}
+
+function openPaymentModal(invoiceId) {
+  currentInvoiceId = invoiceId;
+  document.getElementById('pay-amount').value = '';
+  document.getElementById('pay-reference').value = '';
+  document.getElementById('pay-notes').value = '';
+  document.getElementById('pay-date').value = new Date().toISOString().slice(0,10);
+  openModal('payment-modal');
+}
+
+async function submitPayment() {
+  const amount = parseFloat(document.getElementById('pay-amount').value);
+  if (!amount || amount <= 0) return toast('Enter a valid amount','error');
+  const body = {
+    amount,
+    method: document.getElementById('pay-method').value,
+    reference: document.getElementById('pay-reference').value.trim(),
+    paid_at: document.getElementById('pay-date').value,
+    notes: document.getElementById('pay-notes').value.trim(),
+  };
+  try {
+    await api(`/admin/invoice/${currentInvoiceId}/payment`, {method:'POST', body: JSON.stringify(body)});
+    closeModal('payment-modal');
+    toast('Payment recorded');
+    openInvoiceDetail(currentInvoiceId);
+    loadInvoices();
+  } catch(e) { toast('Error recording payment','error'); }
+}
+
+async function deleteInvoiceConfirm(invoiceId) {
+  if (!confirm('Delete this invoice and all its payment records?')) return;
+  try {
+    await api(`/admin/invoice/${invoiceId}`, {method:'DELETE'});
+    closeModal('invoice-detail-modal');
+    toast('Invoice deleted');
+    loadInvoices();
+  } catch(e) { toast('Error','error'); }
+}
+
+async function exportInvoicesCRM() {
+  try {
+    const data = await api('/admin/invoices/export');
+    const invs = data.invoices;
+    if (!invs.length) return toast('No invoices to export','error');
+    const headers = ['Invoice #','Client','Email','Phone','App ID','Subtotal','Discount','Tax','Total','Paid','Balance Due','Status','Due Date'];
+    const rows = invs.map(i => [
+      i.invoice_no, i.client_name, i.client_email, i.client_phone||'', i.app_id||'',
+      i.subtotal, i.discount, i.tax_amount, i.total, i.amount_paid, i.balance_due, i.status, i.due_date||''
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `mkov_invoices_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    toast('Invoices exported');
+  } catch(e) { toast('Export failed','error'); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// STAFF & ROLES MANAGEMENT
+// ══════════════════════════════════════════════════════════════════════════
+let editingStaffId = null;
+
+async function loadStaff() {
+  try {
+    const data = await api('/admin/staff');
+    document.getElementById('staff-table').innerHTML = data.staff.map(s => `
+      <tr>
+        <td><strong>${s.name}</strong></td>
+        <td>${s.email}</td>
+        <td><span class="status status-${roleStatusClass(s.role)}">${roleLabel(s.role)}</span></td>
+        <td>${s.active ? '<span style="color:var(--green)">Active</span>' : '<span style="color:var(--red)">Disabled</span>'}</td>
+        <td style="font-size:12px">${s.created_at?.split('T')[0] || '—'}</td>
+        <td style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="openEditStaffModal(${s.id},'${s.name}','${s.role}',${s.active})">Edit</button>
+          ${s.role !== 'superadmin' ? `<button class="btn btn-danger btn-sm" onclick="deleteStaffConfirm(${s.id},'${s.name}')">Remove</button>` : ''}
+        </td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    if (CURRENT_ROLE !== 'superadmin' && CURRENT_ROLE !== 'staff') {
+      document.getElementById('staff-table').innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text3)">Only Super Admin can manage staff</td></tr>';
+    }
+  }
+}
+
+function roleStatusClass(role) {
+  return {superadmin:'approved', sales:'submitted', operations:'docs_received', accounts:'review', staff:'approved'}[role] || 'pending';
+}
+
+function openStaffModal() {
+  editingStaffId = null;
+  document.getElementById('staff-modal-title').textContent = 'Add Staff Member';
+  document.getElementById('staff-name').value = '';
+  document.getElementById('staff-email').value = '';
+  document.getElementById('staff-password').value = '';
+  document.getElementById('staff-role').value = 'sales';
+  document.getElementById('staff-password-group').style.display = 'block';
+  document.getElementById('staff-email').disabled = false;
+  document.getElementById('staff-save-btn').textContent = 'Add Staff';
+  openModal('staff-modal');
+}
+
+function openEditStaffModal(id, name, role, active) {
+  editingStaffId = id;
+  document.getElementById('staff-modal-title').textContent = 'Edit Staff Member';
+  document.getElementById('staff-name').value = name;
+  document.getElementById('staff-email').value = '';
+  document.getElementById('staff-email').disabled = true;
+  document.getElementById('staff-password').value = '';
+  document.getElementById('staff-role').value = role;
+  document.getElementById('staff-password-group').style.display = 'block';
+  document.getElementById('staff-save-btn').textContent = 'Save Changes';
+  openModal('staff-modal');
+}
+
+async function saveStaff() {
+  const name     = document.getElementById('staff-name').value.trim();
+  const role     = document.getElementById('staff-role').value;
+  const password = document.getElementById('staff-password').value.trim();
+
+  if (!name) return toast('Name is required','error');
+
+  try {
+    if (editingStaffId) {
+      const body = {name, role};
+      if (password) body.password = password;
+      await api(`/admin/staff/${editingStaffId}`, {method:'PUT', body: JSON.stringify(body)});
+      toast('Staff updated');
+    } else {
+      const email = document.getElementById('staff-email').value.trim();
+      if (!email || !password) return toast('Email and password are required','error');
+      await api('/admin/staff', {method:'POST', body: JSON.stringify({name, email, password, role})});
+      toast('Staff member added');
+    }
+    closeModal('staff-modal');
+    loadStaff();
+  } catch(e) { toast('Error saving staff — email may already exist','error'); }
+}
+
+async function deleteStaffConfirm(id, name) {
+  if (!confirm(`Remove ${name} from staff? They will no longer be able to log in.`)) return;
+  try {
+    await api(`/admin/staff/${id}`, {method:'DELETE'});
+    toast('Staff removed');
+    loadStaff();
+  } catch(e) { toast('Error removing staff','error'); }
+}
 </script>
+
 
 <!-- Admin Upload Doc Modal -->
 <div class="modal-overlay" id="admin-upload-modal">
@@ -3527,6 +3822,214 @@ function downloadPassport(b64, filename) {
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('hotel-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveHotel()">Save Booking</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lead Modal -->
+<div class="modal-overlay" id="lead-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <span class="modal-title" id="lead-modal-title">New Lead</span>
+      <button class="modal-close" onclick="closeModal('lead-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-row">
+          <div class="form-group"><label>Name</label><input type="text" id="lead-name" placeholder="Full name"></div>
+          <div class="form-group"><label>Phone</label><input type="tel" id="lead-phone" placeholder="+91..."></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Email</label><input type="email" id="lead-email" placeholder="email@example.com"></div>
+          <div class="form-group"><label>Source</label>
+            <select id="lead-source">
+              <option value="manual">Manual</option><option value="website">Website</option>
+              <option value="whatsapp">WhatsApp</option><option value="referral">Referral</option>
+              <option value="walk_in">Walk-in</option><option value="call">Phone Call</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Destination</label><input type="text" id="lead-destination" placeholder="e.g. Singapore"></div>
+          <div class="form-group"><label>Visa Type</label>
+            <select id="lead-visa-type"><option>tourist</option><option>business</option><option>student</option><option>work</option><option>transit</option></select>
+          </div>
+        </div>
+        <div class="form-group"><label>Assign to Staff</label>
+          <select id="lead-assigned-to"><option value="">Unassigned</option></select>
+        </div>
+        <div class="form-group"><label>Notes</label><textarea id="lead-notes" placeholder="Initial conversation notes..."></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('lead-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLead()">Save Lead</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lead Detail / Follow-up Modal -->
+<div class="modal-overlay" id="lead-detail-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <span class="modal-title" id="lead-detail-title">Lead Detail</span>
+      <button class="modal-close" onclick="closeModal('lead-detail-modal')">×</button>
+    </div>
+    <div class="modal-body" id="lead-detail-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('lead-detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Calendar Event Modal -->
+<div class="modal-overlay" id="calendar-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <span class="modal-title" id="calendar-modal-title">New Calendar Event</span>
+      <button class="modal-close" onclick="closeModal('calendar-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Title</label><input type="text" id="cal-title" placeholder="e.g. UAE Embassy Appointment"></div>
+        <div class="form-row">
+          <div class="form-group"><label>Event Type</label>
+            <select id="cal-type">
+              <option value="embassy_appointment">Embassy Appointment</option>
+              <option value="travel_date">Travel Date</option>
+              <option value="followup">Follow-up</option>
+              <option value="deadline">Deadline</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Color</label>
+            <select id="cal-color">
+              <option value="#00c6b8">Teal</option><option value="#4f8ef7">Blue</option>
+              <option value="#f5b731">Gold</option><option value="#e05454">Red</option>
+              <option value="#3ecf8e">Green</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Start Date/Time</label><input type="datetime-local" id="cal-start"></div>
+          <div class="form-group"><label>End (optional)</label><input type="datetime-local" id="cal-end"></div>
+        </div>
+        <div class="form-group"><label>Application ID (optional)</label><input type="text" id="cal-app-id" placeholder="VIS-2026-001"></div>
+        <div class="form-group"><label>Location</label><input type="text" id="cal-location" placeholder="e.g. UAE Embassy, Delhi"></div>
+        <div class="form-group"><label>Notes</label><textarea id="cal-notes" placeholder="What to bring, who's attending..."></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('calendar-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCalendarEvent()">Save Event</button>
+    </div>
+  </div>
+</div>
+
+<!-- Invoice Modal -->
+<div class="modal-overlay" id="invoice-modal">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-header">
+      <span class="modal-title">New Invoice</span>
+      <button class="modal-close" onclick="closeModal('invoice-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-row">
+          <div class="form-group"><label>Client</label>
+            <select id="inv-client-id" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-size:13px;outline:none"><option value="">Select client...</option></select>
+          </div>
+          <div class="form-group"><label>Application ID (optional)</label><input type="text" id="inv-app-id" placeholder="VIS-2026-001"></div>
+        </div>
+        <div class="form-group">
+          <label>Line Items</label>
+          <div id="invoice-line-items"></div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addInvoiceLineItem()">+ Add Line Item</button>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Discount (₹)</label><input type="number" id="inv-discount" value="0" oninput="recalcInvoiceTotal()"></div>
+          <div class="form-group"><label>Tax (%)</label><input type="number" id="inv-tax" value="0" oninput="recalcInvoiceTotal()"></div>
+        </div>
+        <div id="invoice-total-display" style="background:var(--surface2);border-radius:var(--r);padding:12px;font-size:13px"></div>
+        <div class="form-row">
+          <div class="form-group"><label>Due Date</label><input type="date" id="inv-due-date"></div>
+        </div>
+        <div class="form-group"><label>Notes</label><textarea id="inv-notes" placeholder="Optional notes for client"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('invoice-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveInvoice()">Create Invoice</button>
+    </div>
+  </div>
+</div>
+
+<!-- Invoice Detail Modal -->
+<div class="modal-overlay" id="invoice-detail-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <span class="modal-title" id="invoice-detail-title">Invoice</span>
+      <button class="modal-close" onclick="closeModal('invoice-detail-modal')">×</button>
+    </div>
+    <div class="modal-body" id="invoice-detail-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('invoice-detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Record Payment Modal -->
+<div class="modal-overlay" id="payment-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <span class="modal-title">Record Payment</span>
+      <button class="modal-close" onclick="closeModal('payment-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Amount (₹)</label><input type="number" id="pay-amount" placeholder="0"></div>
+        <div class="form-row">
+          <div class="form-group"><label>Method</label>
+            <select id="pay-method"><option value="cash">Cash</option><option value="upi">UPI</option><option value="card">Card</option><option value="bank_transfer">Bank Transfer</option><option value="cheque">Cheque</option><option value="other">Other</option></select>
+          </div>
+          <div class="form-group"><label>Date</label><input type="date" id="pay-date"></div>
+        </div>
+        <div class="form-group"><label>Reference (optional)</label><input type="text" id="pay-reference" placeholder="Transaction ID"></div>
+        <div class="form-group"><label>Notes</label><input type="text" id="pay-notes" placeholder="Optional"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('payment-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitPayment()">Record Payment</button>
+    </div>
+  </div>
+</div>
+
+<!-- Staff Modal -->
+<div class="modal-overlay" id="staff-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <span class="modal-title" id="staff-modal-title">Add Staff Member</span>
+      <button class="modal-close" onclick="closeModal('staff-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Full Name</label><input type="text" id="staff-name" placeholder="e.g. Anjali Verma"></div>
+        <div class="form-group"><label>Email</label><input type="email" id="staff-email" placeholder="staff@uniglobemkov.in"></div>
+        <div class="form-group" id="staff-password-group"><label>Password</label><input type="text" id="staff-password" placeholder="Set a password"></div>
+        <div class="form-group"><label>Role</label>
+          <select id="staff-role">
+            <option value="sales">Sales — leads, clients, messaging</option>
+            <option value="operations">Operations — applications, documents, hotels</option>
+            <option value="accounts">Accounts — invoices, payments</option>
+            <option value="superadmin">Super Admin — full access</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('staff-modal')">Cancel</button>
+      <button class="btn btn-primary" id="staff-save-btn" onclick="saveStaff()">Add Staff</button>
     </div>
   </div>
 </div>
