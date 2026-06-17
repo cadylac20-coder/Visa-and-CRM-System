@@ -1510,3 +1510,310 @@ def get_due_followups(admin=Depends(require_roles("sales"))):
     """).fetchall()
     conn.close()
     return {"followups": [dict(r) for r in rows]}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CALENDAR — visa appointments, travel dates, deadlines
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/calendar")
+def list_calendar_events(
+    start: Optional[str] = None,
+    end:   Optional[str] = None,
+    admin=Depends(require_admin)
+):
+    """List calendar events, optionally filtered by date range (YYYY-MM-DD)."""
+    conn = get_db()
+    query  = """
+        SELECT e.*, c.name as client_name, l.name as lead_name
+        FROM calendar_events e
+        LEFT JOIN clients c ON c.id = e.client_id
+        LEFT JOIN leads l ON l.id = e.lead_id
+    """
+    params = []
+    if start and end:
+        query += " WHERE e.start_at >= ? AND e.start_at <= ?"
+        params = [start, end]
+    query += " ORDER BY e.start_at ASC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return {"events": [dict(r) for r in rows]}
+
+
+@app.get("/admin/calendar/upcoming")
+def upcoming_calendar_events(admin=Depends(require_admin)):
+    """Next 14 days of events — for dashboard widget."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT e.*, c.name as client_name, l.name as lead_name
+        FROM calendar_events e
+        LEFT JOIN clients c ON c.id = e.client_id
+        LEFT JOIN leads l ON l.id = e.lead_id
+        WHERE e.start_at >= datetime('now') AND e.start_at <= datetime('now', '+14 day')
+        ORDER BY e.start_at ASC
+        LIMIT 20
+    """).fetchall()
+    conn.close()
+    return {"events": [dict(r) for r in rows]}
+
+
+@app.post("/admin/calendar")
+def create_calendar_event(data: NewCalendarEventRequest, admin=Depends(require_admin)):
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO calendar_events
+        (title, event_type, start_at, end_at, all_day, client_id, app_id, lead_id, location, notes, color, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        data.title, data.event_type, data.start_at, data.end_at, data.all_day,
+        data.client_id, data.app_id, data.lead_id, data.location, data.notes,
+        data.color, admin["name"]
+    ))
+    if data.app_id:
+        conn.execute(
+            "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+            (data.app_id, f"admin:{admin['name']}", "Calendar event added",
+             f"{data.title} on {data.start_at}")
+        )
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status": "created", "id": new_id}
+
+
+@app.put("/admin/calendar/{event_id}")
+def update_calendar_event(event_id: int, data: UpdateCalendarEventRequest, admin=Depends(require_admin)):
+    conn = get_db()
+    event = conn.execute("SELECT id FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+    if not event:
+        conn.close()
+        raise HTTPException(404, "Event not found")
+    sets, values = [], []
+    for col, val in data.dict(exclude_unset=True).items():
+        sets.append(f"{col}=?")
+        values.append(val)
+    if sets:
+        values.append(event_id)
+        conn.execute(f"UPDATE calendar_events SET {', '.join(sets)} WHERE id=?", values)
+        conn.commit()
+    conn.close()
+    return {"status": "updated"}
+
+
+@app.delete("/admin/calendar/{event_id}")
+def delete_calendar_event(event_id: int, admin=Depends(require_admin)):
+    conn = get_db()
+    conn.execute("DELETE FROM calendar_events WHERE id=?", (event_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INVOICES & PAYMENTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _calc_invoice_totals(line_items: list, discount: float, tax_percent: float):
+    subtotal   = sum(li.qty * li.unit_price for li in line_items)
+    after_disc = max(0, subtotal - discount)
+    tax_amount = after_disc * (tax_percent / 100)
+    total      = after_disc + tax_amount
+    return subtotal, tax_amount, total
+
+
+@app.get("/admin/invoices")
+def list_invoices(status: Optional[str] = None, admin=Depends(require_roles("accounts"))):
+    conn = get_db()
+    query  = """
+        SELECT i.*, c.name as client_name, c.email as client_email, c.phone as client_phone
+        FROM invoices i JOIN clients c ON c.id = i.client_id
+    """
+    params = []
+    if status:
+        query += " WHERE i.status=?"
+        params = [status]
+    query += " ORDER BY i.created_at DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    invoices = []
+    for r in rows:
+        d = dict(r)
+        d["line_items"] = json.loads(d["line_items_json"])
+        d["balance_due"] = round((d["total"] or 0) - (d["amount_paid"] or 0), 2)
+        invoices.append(d)
+
+    stats = {
+        "total_invoiced":  round(sum(i["total"] for i in invoices), 2),
+        "total_collected": round(sum(i["amount_paid"] for i in invoices), 2),
+        "total_due":       round(sum(i["balance_due"] for i in invoices), 2),
+        "unpaid_count":    sum(1 for i in invoices if i["status"] == "unpaid"),
+        "overdue_count":   sum(1 for i in invoices if i["status"] == "overdue"),
+    }
+    return {"invoices": invoices, "stats": stats}
+
+
+@app.get("/admin/invoice/{invoice_id}")
+def get_invoice(invoice_id: int, admin=Depends(require_roles("accounts"))):
+    conn = get_db()
+    inv = conn.execute("""
+        SELECT i.*, c.name as client_name, c.email as client_email, c.phone as client_phone
+        FROM invoices i JOIN clients c ON c.id = i.client_id
+        WHERE i.id=?
+    """, (invoice_id,)).fetchone()
+    if not inv:
+        conn.close()
+        raise HTTPException(404, "Invoice not found")
+    payments = conn.execute(
+        "SELECT * FROM invoice_payments WHERE invoice_id=? ORDER BY paid_at DESC", (invoice_id,)
+    ).fetchall()
+    conn.close()
+    d = dict(inv)
+    d["line_items"] = json.loads(d["line_items_json"])
+    d["balance_due"] = round((d["total"] or 0) - (d["amount_paid"] or 0), 2)
+    return {"invoice": d, "payments": [dict(p) for p in payments]}
+
+
+@app.post("/admin/invoice")
+def create_invoice(data: NewInvoiceRequest, admin=Depends(require_roles("accounts"))):
+    conn = get_db()
+    client = conn.execute("SELECT id FROM clients WHERE id=?", (data.client_id,)).fetchone()
+    if not client:
+        conn.close()
+        raise HTTPException(404, "Client not found")
+
+    subtotal, tax_amount, total = _calc_invoice_totals(data.line_items, data.discount, data.tax_percent)
+    count = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
+    invoice_no = f"INV-{datetime.now().year}-{str(count+1).zfill(3)}"
+
+    line_items_json = json.dumps([
+        {"label": li.label, "qty": li.qty, "unit_price": li.unit_price, "amount": round(li.qty * li.unit_price, 2)}
+        for li in data.line_items
+    ])
+
+    conn.execute("""
+        INSERT INTO invoices
+        (invoice_no, client_id, app_id, line_items_json, subtotal, discount, tax_percent, tax_amount, total, due_date, notes, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        invoice_no, data.client_id, data.app_id, line_items_json,
+        round(subtotal, 2), data.discount, data.tax_percent, round(tax_amount, 2),
+        round(total, 2), data.due_date, data.notes, admin["name"]
+    ))
+
+    if data.app_id:
+        conn.execute(
+            "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+            (data.app_id, f"admin:{admin['name']}", "Invoice created",
+             f"{invoice_no} — total ₹{total:.2f}")
+        )
+
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status": "created", "id": new_id, "invoice_no": invoice_no, "total": round(total, 2)}
+
+
+@app.put("/admin/invoice/{invoice_id}")
+def update_invoice(invoice_id: int, data: UpdateInvoiceRequest, admin=Depends(require_roles("accounts"))):
+    conn = get_db()
+    inv = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+    if not inv:
+        conn.close()
+        raise HTTPException(404, "Invoice not found")
+
+    sets, values = ["updated_at=CURRENT_TIMESTAMP"], []
+
+    if data.line_items is not None:
+        discount    = data.discount if data.discount is not None else inv["discount"]
+        tax_percent = data.tax_percent if data.tax_percent is not None else inv["tax_percent"]
+        subtotal, tax_amount, total = _calc_invoice_totals(data.line_items, discount, tax_percent)
+        line_items_json = json.dumps([
+            {"label": li.label, "qty": li.qty, "unit_price": li.unit_price, "amount": round(li.qty * li.unit_price, 2)}
+            for li in data.line_items
+        ])
+        sets += ["line_items_json=?", "subtotal=?", "discount=?", "tax_percent=?", "tax_amount=?", "total=?"]
+        values += [line_items_json, round(subtotal, 2), discount, tax_percent, round(tax_amount, 2), round(total, 2)]
+    elif data.discount is not None or data.tax_percent is not None:
+        existing_items = json.loads(inv["line_items_json"])
+        items = [InvoiceLineItem(label=i["label"], qty=i["qty"], unit_price=i["unit_price"]) for i in existing_items]
+        discount    = data.discount if data.discount is not None else inv["discount"]
+        tax_percent = data.tax_percent if data.tax_percent is not None else inv["tax_percent"]
+        subtotal, tax_amount, total = _calc_invoice_totals(items, discount, tax_percent)
+        sets += ["discount=?", "tax_percent=?", "tax_amount=?", "total=?"]
+        values += [discount, tax_percent, round(tax_amount, 2), round(total, 2)]
+
+    if data.due_date is not None:
+        sets.append("due_date=?"); values.append(data.due_date)
+    if data.notes is not None:
+        sets.append("notes=?"); values.append(data.notes)
+    if data.status is not None:
+        sets.append("status=?"); values.append(data.status)
+
+    values.append(invoice_id)
+    conn.execute(f"UPDATE invoices SET {', '.join(sets)} WHERE id=?", values)
+    conn.commit()
+    conn.close()
+    return {"status": "updated"}
+
+
+@app.delete("/admin/invoice/{invoice_id}")
+def delete_invoice(invoice_id: int, admin=Depends(require_roles("accounts"))):
+    conn = get_db()
+    conn.execute("DELETE FROM invoice_payments WHERE invoice_id=?", (invoice_id,))
+    conn.execute("DELETE FROM invoices WHERE id=?", (invoice_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+
+@app.post("/admin/invoice/{invoice_id}/payment")
+def record_payment(invoice_id: int, data: RecordPaymentRequest, admin=Depends(require_roles("accounts"))):
+    conn = get_db()
+    inv = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+    if not inv:
+        conn.close()
+        raise HTTPException(404, "Invoice not found")
+
+    paid_at = data.paid_at or datetime.now().strftime("%Y-%m-%d")
+    conn.execute("""
+        INSERT INTO invoice_payments (invoice_id, amount, method, reference, paid_at, notes, recorded_by)
+        VALUES (?,?,?,?,?,?,?)
+    """, (invoice_id, data.amount, data.method, data.reference, paid_at, data.notes, admin["name"]))
+
+    new_paid  = (inv["amount_paid"] or 0) + data.amount
+    new_status = "paid" if new_paid >= inv["total"] else ("partial" if new_paid > 0 else "unpaid")
+
+    conn.execute(
+        "UPDATE invoices SET amount_paid=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (round(new_paid, 2), new_status, invoice_id)
+    )
+
+    if inv["app_id"]:
+        conn.execute(
+            "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+            (inv["app_id"], f"admin:{admin['name']}", "Payment recorded",
+             f"₹{data.amount:.2f} via {data.method} for {inv['invoice_no']}")
+        )
+
+    conn.commit()
+    conn.close()
+    return {"status": "recorded", "new_status": new_status, "amount_paid": round(new_paid, 2)}
+
+
+@app.get("/admin/invoices/export")
+def export_invoices(admin=Depends(require_roles("accounts"))):
+    """Flat export of all invoices for Excel/CSV download."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT i.*, c.name as client_name, c.email as client_email, c.phone as client_phone
+        FROM invoices i JOIN clients c ON c.id = i.client_id
+        ORDER BY i.created_at DESC
+    """).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["balance_due"] = round((d["total"] or 0) - (d["amount_paid"] or 0), 2)
+        out.append(d)
+    return {"invoices": out}
