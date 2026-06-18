@@ -37,10 +37,9 @@ def decode_token(token: str) -> dict:
 # ── Roles ──────────────────────────────────────────────────────────────────────
 # superadmin : full access, can create/edit/remove staff and assign roles
 # sales      : leads, follow-ups, clients, messaging
-# operations : applications, documents, checklists, hotels
-# accounts   : invoices, payments, fee structure
+# visa_staff : applications, documents, checklists, hotels, invoices, payments, fee structure
 # staff      : legacy role, treated like superadmin for backward compatibility
-ALL_ROLES = ("superadmin", "staff", "sales", "operations", "accounts")
+ALL_ROLES = ("superadmin", "staff", "sales", "visa_staff")
 
 
 # ── Dependency: require admin JWT (any staff role) ────────────────────────────
@@ -66,7 +65,7 @@ def require_superadmin(creds: HTTPAuthorizationCredentials = Depends(bearer)):
 # ── Factory: require one of a set of roles ────────────────────────────────────
 def require_roles(*roles):
     """
-    Usage: Depends(require_roles('superadmin', 'accounts'))
+    Usage: Depends(require_roles('superadmin', 'visa_staff'))
     superadmin/staff always pass regardless of which roles are listed.
     """
     def checker(creds: HTTPAuthorizationCredentials = Depends(bearer)):
