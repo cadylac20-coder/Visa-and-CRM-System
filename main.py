@@ -13,7 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
-
+import asyncio
+from typing import Dict
 from database import init_db, get_db
 from auth import require_admin, require_client, require_superadmin, require_roles, admin_login, client_login, hash_password
 from notifier import send_checklist, send_status_update, send_reminder
@@ -40,29 +41,42 @@ STATUS_PROGRESS = {
 class ConnectionManager:
     def __init__(self):
         # Maps string user_id -> active WebSocket instance
-        self.active_connections: dict[str, WebSocket] = {}
+        self.active_connections: Dict[str, WebSocket] = {}
         # Stores user metadata for live online display tracking
-        self.user_details: dict[str, dict] = {}
+        self.user_details: Dict[str, dict] = {}
+        # Start background loop to sweep away disconnected users/closed laptops
+        try:
+            asyncio.create_task(self._presence_heartbeat_sweeper())
+        except Exception:
+            pass
 
     async def connect(self, user_id: str, details: dict, websocket: WebSocket):
+        # Enforce that only valid roles are registered in the online presence view
+        allowed_roles = ["superadmin", "visa", "sales"]
+        if details.get("role") not in allowed_roles:
+            # Treat legacy roles or undefined items gracefully as sales or don't track
+            details["role"] = "sales"
+
         await websocket.accept()
-        self.active_connections[user_id] = websocket
-        self.user_details[user_id] = details
+        self.active_connections[str(user_id)] = websocket
+        self.user_details[str(user_id)] = details
         await self.broadcast_presence()
 
     async def disconnect(self, user_id: str):
-        if user_id in self.active_connections:
-            del self.active_connections[user_id]
-        if user_id in self.user_details:
-            del self.user_details[user_id]
+        uid = str(user_id)
+        if uid in self.active_connections:
+            del self.active_connections[uid]
+        if uid in self.user_details:
+            del self.user_details[uid]
         await self.broadcast_presence()
 
     async def send_personal_message(self, message: dict, receiver_id: str):
-        if receiver_id in self.active_connections:
-            await self.active_connections[receiver_id].send_json(message)
+        rid = str(receiver_id)
+        if rid in self.active_connections:
+            await self.active_connections[rid].send_json(message)
 
     async def broadcast_to_group(self, message: dict):
-        for connection in self.active_connections.values():
+        for connection in list(self.active_connections.values()):
             try:
                 await connection.send_json(message)
             except Exception:
@@ -76,14 +90,33 @@ class ConnectionManager:
                 for uid, info in self.user_details.items()
             ]
         }
-        for connection in self.active_connections.values():
+        for connection in list(self.active_connections.values()):
             try:
                 await connection.send_json(presence_data)
             except Exception:
                 pass
 
-manager = ConnectionManager()
+    async def _presence_heartbeat_sweeper(self):
+        """Checks connections every 10 seconds and kicks out dead sessions cleanly."""
+        while True:
+            await asyncio.sleep(10)
+            dead_users = []
+            
+            for user_id, socket in list(self.active_connections.items()):
+                try:
+                    # Send an un-intrusive ping to verify connection integrity
+                    await socket.send_json({"type": "ping"})
+                except Exception:
+                    # Device is asleep, lid is closed, or page was destroyed
+                    dead_users.append(user_id)
+            
+            if dead_users:
+                for user_id in dead_users:
+                    if user_id in self.active_connections: del self.active_connections[user_id]
+                    if user_id in self.user_details: del self.user_details[user_id]
+                await self.broadcast_presence()
 
+manager = ConnectionManager()
 # Audit Log Helper Function
 def log_action(user_id: str, user_name: str, user_role: str, action: str, details: str = None):
     conn = get_db()
