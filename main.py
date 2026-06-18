@@ -7,14 +7,13 @@ import json
 import shutil
 import tempfile
 from datetime import datetime
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
-import asyncio
-from typing import Dict
+
 from database import init_db, get_db
 from auth import require_admin, require_client, require_superadmin, require_roles, admin_login, client_login, hash_password
 from notifier import send_checklist, send_status_update, send_reminder
@@ -36,96 +35,6 @@ STATUS_PROGRESS = {
     "pending": 10, "docs_received": 35, "review": 55,
     "submitted": 75, "approved": 100, "rejected": 0,
 }
-
-# --- Real-time Session & Chat Manager ───────────────────────────────────────
-class ConnectionManager:
-    def __init__(self):
-        # Maps string user_id -> active WebSocket instance
-        self.active_connections: Dict[str, WebSocket] = {}
-        # Stores user metadata for live online display tracking
-        self.user_details: Dict[str, dict] = {}
-        # Start background loop to sweep away disconnected users/closed laptops
-        try:
-            asyncio.create_task(self._presence_heartbeat_sweeper())
-        except Exception:
-            pass
-
-    async def connect(self, user_id: str, details: dict, websocket: WebSocket):
-        # Enforce that only valid roles are registered in the online presence view
-        allowed_roles = ["superadmin", "visa", "sales"]
-        if details.get("role") not in allowed_roles:
-            # Treat legacy roles or undefined items gracefully as sales or don't track
-            details["role"] = "sales"
-
-        await websocket.accept()
-        self.active_connections[str(user_id)] = websocket
-        self.user_details[str(user_id)] = details
-        await self.broadcast_presence()
-
-    async def disconnect(self, user_id: str):
-        uid = str(user_id)
-        if uid in self.active_connections:
-            del self.active_connections[uid]
-        if uid in self.user_details:
-            del self.user_details[uid]
-        await self.broadcast_presence()
-
-    async def send_personal_message(self, message: dict, receiver_id: str):
-        rid = str(receiver_id)
-        if rid in self.active_connections:
-            await self.active_connections[rid].send_json(message)
-
-    async def broadcast_to_group(self, message: dict):
-        for connection in list(self.active_connections.values()):
-            try:
-                await connection.send_json(message)
-            except Exception:
-                pass
-
-    async def broadcast_presence(self):
-        presence_data = {
-            "type": "presence_update",
-            "online_users": [
-                {"id": uid, "name": info["name"], "role": info["role"], "email": info["email"]}
-                for uid, info in self.user_details.items()
-            ]
-        }
-        for connection in list(self.active_connections.values()):
-            try:
-                await connection.send_json(presence_data)
-            except Exception:
-                pass
-
-    async def _presence_heartbeat_sweeper(self):
-        """Checks connections every 10 seconds and kicks out dead sessions cleanly."""
-        while True:
-            await asyncio.sleep(10)
-            dead_users = []
-            
-            for user_id, socket in list(self.active_connections.items()):
-                try:
-                    # Send an un-intrusive ping to verify connection integrity
-                    await socket.send_json({"type": "ping"})
-                except Exception:
-                    # Device is asleep, lid is closed, or page was destroyed
-                    dead_users.append(user_id)
-            
-            if dead_users:
-                for user_id in dead_users:
-                    if user_id in self.active_connections: del self.active_connections[user_id]
-                    if user_id in self.user_details: del self.user_details[user_id]
-                await self.broadcast_presence()
-
-manager = ConnectionManager()
-# Audit Log Helper Function
-def log_action(user_id: str, user_name: str, user_role: str, action: str, details: str = None):
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO audit_logs (user_id, user_name, user_role, action, details) VALUES (?,?,?,?,?)",
-        (str(user_id), user_name, user_role, action, details)
-    )
-    conn.commit()
-    conn.close()
 
 # --- Schemas ───────────────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
@@ -186,7 +95,7 @@ class SendReminderRequest(BaseModel):
 # --- Staff management schemas ───────────────────────────────────────────────
 class NewStaffRequest(BaseModel):
     name: str; email: str; password: str
-    role: str = "sales"   # sales | operations | accounts | superadmin
+    role: str = "sales"   # sales | visa_staff | superadmin
 
 class UpdateStaffRequest(BaseModel):
     name:     Optional[str] = None
@@ -288,12 +197,8 @@ def serve_client():
 
 # --- Auth ──────────────────────────────────────────────────────────────────────
 @app.post("/auth/admin/login")
-def login_admin(data: LoginRequest):
-    res = admin_login(data.email, data.password)
-    # Log successful login to system audit trails
-    log_action(res["id"], res["name"], res["role"], "Login", f"Logged in from admin dashboard panel")
-    return res
-    
+def login_admin(data: LoginRequest): return admin_login(data.email, data.password)
+
 @app.post("/auth/client/login")
 def login_client(data: LoginRequest): return client_login(data.email, data.password)
 
@@ -365,7 +270,7 @@ def admin_get_application(app_id: str, admin=Depends(require_admin)):
     }
 
 @app.post("/admin/application/{app_id}/status")
-def admin_update_status(app_id: str, data: UpdateStatusRequest, admin=Depends(require_admin)):
+def admin_update_status(app_id: str, data: UpdateStatusRequest, admin=Depends(require_roles("visa_staff"))):
     if data.status not in STATUS_PROGRESS: raise HTTPException(400, "Invalid status")
     conn = get_db()
     app = conn.execute("SELECT * FROM applications WHERE app_id=?", (app_id,)).fetchone()
@@ -441,7 +346,7 @@ def admin_get_team_notes(app_id: str, admin=Depends(require_admin)):
     return {"notes": [dict(n) for n in notes]}
 
 @app.post("/admin/application")
-def admin_create_application(data: NewApplicationRequest, admin=Depends(require_admin)):
+def admin_create_application(data: NewApplicationRequest, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
     client = conn.execute("SELECT * FROM clients WHERE email=?", (data.client_email,)).fetchone()
     if not client: conn.close(); raise HTTPException(404, "Client not found")
@@ -472,7 +377,7 @@ def admin_create_application(data: NewApplicationRequest, admin=Depends(require_
     return {"status": "created", "app_id": app_id}
 
 @app.post("/admin/application/{app_id}/verify-doc")
-def admin_verify_doc(app_id: str, data: UpdateDocStatusRequest, admin=Depends(require_admin)):
+def admin_verify_doc(app_id: str, data: UpdateDocStatusRequest, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
     conn.execute("UPDATE documents SET status=?, notes=?, verified_at=CURRENT_TIMESTAMP WHERE id=?",
                  (data.status, data.notes, data.doc_id))
@@ -483,7 +388,7 @@ def admin_verify_doc(app_id: str, data: UpdateDocStatusRequest, admin=Depends(re
 
 # --- Checklists & Pricing ──────────────────────────────────────────────────────
 @app.post("/admin/checklist/create")
-def create_checklist(data: CustomChecklistData, admin=Depends(require_admin)):
+def create_checklist(data: CustomChecklistData, admin=Depends(require_roles("visa_staff"))):
     final_price = data.base_price * (1 - data.discount_percentage / 100)
     conn = get_db()
     try:
@@ -516,7 +421,7 @@ def get_checklists_by_country(country: str, admin=Depends(require_admin)):
     return {"checklists": result}
 
 @app.put("/admin/checklist/{checklist_id}")
-def update_checklist(checklist_id: int, data: UpdateChecklistData, admin=Depends(require_admin)):
+def update_checklist(checklist_id: int, data: UpdateChecklistData, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
     if data.base_price is not None:
         conn.execute("UPDATE custom_checklists SET base_price=? WHERE id=?", (data.base_price, checklist_id))
@@ -531,7 +436,7 @@ def update_checklist(checklist_id: int, data: UpdateChecklistData, admin=Depends
     return {"status": "updated"}
 
 @app.post("/admin/client-discount")
-def add_client_discount(data: ClientDiscountData, admin=Depends(require_admin)):
+def add_client_discount(data: ClientDiscountData, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
     try:
         conn.execute("INSERT INTO client_discounts (client_id, checklist_id, discount_type, discount_value, reason, created_by) VALUES (?,?,?,?,?,?)",
@@ -606,6 +511,19 @@ def get_communication_log(app_id: str, admin=Depends(require_admin)):
     conn.close()
     return {"logs": [dict(l) for l in logs]}
 
+@app.get("/admin/communication-log")
+def get_all_communication_logs(admin=Depends(require_admin)):
+    """Global communication log across all clients/applications, for export."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT cl.*, c.name as client_name, c.email as client_email
+        FROM communication_log cl
+        LEFT JOIN clients c ON c.id = cl.client_id
+        ORDER BY cl.created_at DESC
+    """).fetchall()
+    conn.close()
+    return {"logs": [dict(r) for r in rows]}
+
 @app.get("/admin/webhook-log")
 def admin_webhook_log(admin=Depends(require_admin)):
     conn = get_db()
@@ -641,12 +559,11 @@ def client_get_application(app_id: str, client=Depends(require_client)):
     return {"application": dict(app), "documents": [dict(d) for d in docs],
             "activity": [dict(l) for l in logs], "checklist": checklist}
 
-# --- GENERATE PDF CHECKLIST ──────────────────────────────────────────────────
 @app.get("/client/download-checklist/{app_id}")
-def client_download_checklist(app_id: str):
-    # Public endpoint allowing WhatsApp/Email linking to the PDF
+def client_download_checklist(app_id: str, client=Depends(require_client)):
     conn = get_db()
-    app = conn.execute("SELECT * FROM applications WHERE app_id=?", (app_id,)).fetchone()
+    client_row = conn.execute("SELECT * FROM clients WHERE email=?", (client["sub"],)).fetchone()
+    app = conn.execute("SELECT * FROM applications WHERE app_id=? AND client_id=?", (app_id, client_row["id"])).fetchone()
     if not app: conn.close(); raise HTTPException(404, "Not found")
     documents, final_price = [], 0
     if app["checklist_id"]:
@@ -656,58 +573,25 @@ def client_download_checklist(app_id: str):
         docs = conn.execute("SELECT doc_type FROM documents WHERE app_id=?", (app_id,)).fetchall()
         documents = [d["doc_type"].replace("_"," ").title() for d in docs]
     conn.close()
-    
-    try:
-        from fpdf import FPDF
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=14, style='B')
-        pdf.cell(200, 10, txt="VISA APPLICATION CHECKLIST", ln=True, align="C")
-        pdf.ln(10)
-        
-        pdf.set_font("Arial", size=11, style='B')
-        pdf.cell(50, 10, txt="Application ID:", border=0)
-        pdf.set_font("Arial", size=11)
-        pdf.cell(100, 10, txt=app_id, ln=True)
-        
-        pdf.set_font("Arial", size=11, style='B')
-        pdf.cell(50, 10, txt="Destination:", border=0)
-        pdf.set_font("Arial", size=11)
-        pdf.cell(100, 10, txt=app['destination'], ln=True)
-        
-        pdf.set_font("Arial", size=11, style='B')
-        pdf.cell(50, 10, txt="Visa Type:", border=0)
-        pdf.set_font("Arial", size=11)
-        pdf.cell(100, 10, txt=app['visa_type'].title(), ln=True)
-        
-        pdf.ln(10)
-        pdf.set_font("Arial", size=12, style='B')
-        pdf.cell(200, 10, txt="REQUIRED DOCUMENTS:", ln=True)
-        pdf.set_font("Arial", size=11)
-        for i, doc in enumerate(documents, 1):
-            pdf.cell(200, 8, txt=f"  [   ]  {doc}", ln=True)
-            
-        if final_price:
-            pdf.ln(10)
-            pdf.set_font("Arial", size=11, style='B')
-            pdf.cell(200, 10, txt=f"SERVICE CHARGE: INR {final_price:.2f}", ln=True)
-            
-        pdf.ln(15)
-        pdf.set_font("Arial", size=10, style='I')
-        pdf.cell(200, 6, txt="Upload at: https://arya-v1-0-0.onrender.com/client", ln=True)
-        pdf.cell(200, 6, txt="Help: +91-8010700700", ln=True)
+    text = f"""╔════════════════════════════════════════════╗
+║         VISA APPLICATION CHECKLIST
+╚════════════════════════════════════════════╝
 
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        pdf.output(tmp.name)
-        return FileResponse(tmp.name, filename=f"{app_id}_checklist.pdf", media_type="application/pdf")
-        
-    except ImportError:
-        # Fallback to Text if fpdf is not installed
-        text = f"VISA APPLICATION CHECKLIST\n\nApp ID: {app_id}\nDestination: {app['destination']}\n\nREQUIRED DOCUMENTS:\n"
-        for i, doc in enumerate(documents, 1): text += f"{i}. [ ] {doc}\n"
-        tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
-        tmp.write(text); tmp.flush()
-        return FileResponse(tmp.name, filename=f"{app_id}_checklist.txt", media_type="text/plain")
+Application ID:  {app_id}
+Destination:     {app['destination']}
+Visa Type:       {app['visa_type'].title()}
+Status:          {app['status'].title()}
+
+REQUIRED DOCUMENTS:
+"""
+    for i, doc in enumerate(documents, 1):
+        text += f"  {i}. [ ] {doc}\n"
+    if final_price:
+        text += f"\nSERVICE CHARGE: ₹{final_price:.2f}\n"
+    text += f"\nUpload at: https://arya-v1-0-0.onrender.com/client\nHelp: +91-8010700700\n"
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
+    tmp.write(text); tmp.flush()
+    return FileResponse(tmp.name, filename=f"{app_id}_checklist.txt", media_type="text/plain")
 
 @app.post("/client/application/{app_id}/upload")
 async def client_upload_doc(app_id: str, doc_type: str = Form(...), file: UploadFile = File(...), client=Depends(require_client)):
@@ -967,7 +851,7 @@ def admin_get_document(doc_id: int, admin=Depends(require_admin)):
 
 # ── UPDATE application details ────────────────────────────────────────────────
 @app.put("/admin/application/{app_id}")
-def admin_update_application(app_id: str, data: UpdateApplicationRequest, admin=Depends(require_admin)):
+def admin_update_application(app_id: str, data: UpdateApplicationRequest, admin=Depends(require_roles("visa_staff"))):
     """Edit destination, dates, notes, embassy ref etc."""
     conn = get_db()
     app = conn.execute("SELECT * FROM applications WHERE app_id=?", (app_id,)).fetchone()
@@ -1008,13 +892,20 @@ def admin_update_application(app_id: str, data: UpdateApplicationRequest, admin=
 
 # ── SET fee structure for client ──────────────────────────────────────────────
 @app.post("/admin/client-fee")
-def admin_set_client_fee(data: FeeStructureRequest, admin=Depends(require_admin)):
+def admin_set_client_fee(data: FeeStructureRequest, admin=Depends(require_roles("visa_staff"))):
+    """
+    Set custom fee/discount for a specific client.
+    discount_type: 'percentage' = e.g. 10% off
+                   'fixed'      = e.g. INR 500 off
+                   'none'       = full price
+    """
     conn = get_db()
     client = conn.execute("SELECT id, name FROM clients WHERE id=?", (data.client_id,)).fetchone()
     if not client:
         conn.close()
         raise HTTPException(404, "Client not found")
 
+    # Calculate final price
     if data.discount_type == "percentage":
         final = data.base_price * (1 - data.discount_value / 100)
     elif data.discount_type == "fixed":
@@ -1027,11 +918,15 @@ def admin_set_client_fee(data: FeeStructureRequest, admin=Depends(require_admin)
         (client_id, checklist_id, discount_type, discount_value, reason, created_by)
         VALUES (?,?,?,?,?,?)
     """, (
-        data.client_id, None, data.discount_type, data.discount_value,
+        data.client_id,
+        None,
+        data.discount_type,
+        data.discount_value,
         f"{data.label} | Base: {data.base_price} | Final: {final} | {data.reason}",
         admin["name"]
     ))
 
+    # If tied to an application, log it
     if data.app_id:
         conn.execute(
             "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
@@ -1039,43 +934,73 @@ def admin_set_client_fee(data: FeeStructureRequest, admin=Depends(require_admin)
              f"{data.label}: ₹{data.base_price} → ₹{final:.0f} ({data.discount_type}: {data.discount_value})")
         )
 
-    conn.commit(); conn.close()
-    return { "status": "set", "base_price": data.base_price, "final_price": final, "client_name": client["name"] }
+    conn.commit()
+    conn.close()
+    return {
+        "status":      "set",
+        "base_price":  data.base_price,
+        "final_price": final,
+        "client_name": client["name"]
+    }
 
 
+# ── GET fee structure for client ──────────────────────────────────────────────
 @app.get("/admin/client-fee/{client_id}")
 def admin_get_client_fee(client_id: int, admin=Depends(require_admin)):
+    """Get all fee entries for a client."""
     conn = get_db()
-    rows = conn.execute("SELECT * FROM client_discounts WHERE client_id=? AND active=1 ORDER BY created_at DESC", (client_id,)).fetchall()
+    rows = conn.execute("""
+        SELECT * FROM client_discounts
+        WHERE client_id=? AND active=1
+        ORDER BY created_at DESC
+    """, (client_id,)).fetchall()
     conn.close()
     return {"fees": [dict(r) for r in rows]}
 
 
+# ── DELETE (deactivate) a fee entry ──────────────────────────────────────────
 @app.delete("/admin/client-fee/{fee_id}")
-def admin_delete_client_fee(fee_id: int, admin=Depends(require_admin)):
+def admin_delete_client_fee(fee_id: int, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
     conn.execute("UPDATE client_discounts SET active=0 WHERE id=?", (fee_id,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return {"status": "removed"}
 
 
+# ── Add document type to an application checklist ────────────────────────────
 @app.post("/admin/application/{app_id}/add-doc-type")
-def admin_add_doc_type(app_id: str, data: dict, admin=Depends(require_admin)):
+def admin_add_doc_type(app_id: str, data: dict, admin=Depends(require_roles("visa_staff"))):
+    """Add a new document slot to an application."""
     doc_type = data.get("doc_type", "").strip().lower().replace(" ", "_")
-    if not doc_type: raise HTTPException(400, "doc_type required")
+    if not doc_type:
+        raise HTTPException(400, "doc_type required")
     conn = get_db()
-    existing = conn.execute("SELECT id FROM documents WHERE app_id=? AND doc_type=?", (app_id, doc_type)).fetchone()
-    if existing: conn.close(); return {"status": "already exists"}
-    conn.execute("INSERT INTO documents (app_id, doc_type, status) VALUES (?,?,?)", (app_id, doc_type, "missing"))
-    conn.commit(); conn.close()
+    existing = conn.execute(
+        "SELECT id FROM documents WHERE app_id=? AND doc_type=?", (app_id, doc_type)
+    ).fetchone()
+    if existing:
+        conn.close()
+        return {"status": "already exists"}
+    conn.execute(
+        "INSERT INTO documents (app_id, doc_type, status) VALUES (?,?,?)",
+        (app_id, doc_type, "missing")
+    )
+    conn.commit()
+    conn.close()
     return {"status": "added", "doc_type": doc_type}
 
 
+# ── DELETE client ─────────────────────────────────────────────────────────────
 @app.delete("/admin/client/{client_id}")
 def admin_delete_client(client_id: int, admin=Depends(require_admin)):
+    """Remove a client and all their data."""
     conn = get_db()
     client = conn.execute("SELECT name FROM clients WHERE id=?", (client_id,)).fetchone()
-    if not client: conn.close(); raise HTTPException(404, "Client not found")
+    if not client:
+        conn.close()
+        raise HTTPException(404, "Client not found")
+    # Cascade delete
     apps = conn.execute("SELECT app_id FROM applications WHERE client_id=?", (client_id,)).fetchall()
     for a in apps:
         conn.execute("DELETE FROM documents WHERE app_id=?", (a["app_id"],))
@@ -1084,23 +1009,34 @@ def admin_delete_client(client_id: int, admin=Depends(require_admin)):
     conn.execute("DELETE FROM applications WHERE client_id=?", (client_id,))
     conn.execute("DELETE FROM client_discounts WHERE client_id=?", (client_id,))
     conn.execute("DELETE FROM clients WHERE id=?", (client_id,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return {"status": "deleted", "client": client["name"]}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PASSPORT OCR
+# PASSPORT OCR — Extract client details from uploaded passport image/PDF
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/admin/client/{client_id}/extract-passport")
 async def extract_passport_details(client_id: int, admin=Depends(require_admin)):
+    """
+    Try to extract name, DOB, passport number, nationality, expiry from
+    the stored passport image using pytesseract. Falls back gracefully if
+    tesseract is not installed on the Render instance.
+    """
     import base64, re
+
     conn = get_db()
-    row  = conn.execute("SELECT passport_b64, passport_filename FROM clients WHERE id=?", (client_id,)).fetchone()
+    row  = conn.execute(
+        "SELECT passport_b64, passport_filename FROM clients WHERE id=?", (client_id,)
+    ).fetchone()
     conn.close()
 
-    if not row or not row["passport_b64"]: raise HTTPException(404, "No passport on file")
+    if not row or not row["passport_b64"]:
+        raise HTTPException(404, "No passport on file")
 
+    # Try OCR
     try:
         import pytesseract
         from PIL import Image
@@ -1110,8 +1046,9 @@ async def extract_passport_details(client_id: int, admin=Depends(require_admin))
         filename  = row["passport_filename"] or ""
 
         if filename.lower().endswith(".pdf"):
+            # Convert first PDF page to image
             try:
-                import fitz
+                import fitz  # PyMuPDF
                 doc  = fitz.open(stream=img_bytes, filetype="pdf")
                 page = doc[0]
                 pix  = page.get_pixmap(dpi=200)
@@ -1121,25 +1058,34 @@ async def extract_passport_details(client_id: int, admin=Depends(require_admin))
 
         img  = Image.open(io.BytesIO(img_bytes))
         text = pytesseract.image_to_string(img, lang="eng")
+
+        # Parse MRZ lines (last 2 lines of passport)
         lines = [l.strip() for l in text.split("\n") if l.strip()]
         mrz   = [l for l in lines if len(l) >= 30 and "<" in l]
+
         extracted = {}
 
+        # Try MRZ parsing if available
         if len(mrz) >= 2:
             m1 = mrz[-2].replace(" ", "")
             m2 = mrz[-1].replace(" ", "")
+            # Line 1: surname<<given names
             name_part = m1[5:44] if len(m1) > 44 else ""
             if "<<" in name_part:
                 parts = name_part.split("<<")
                 extracted["surname"]    = parts[0].replace("<", " ").strip()
                 extracted["given_name"] = parts[1].replace("<", " ").strip() if len(parts) > 1 else ""
+            # Line 2: passport number, DOB, expiry
             if len(m2) >= 28:
                 extracted["passport_number"] = m2[0:9].replace("<", "")
-                extracted["date_of_birth"] = _fmt_mrz_date(m2[13:19])
-                extracted["expiry_date"]   = _fmt_mrz_date(m2[19:25])
+                dob_raw = m2[13:19]
+                exp_raw = m2[19:25]
+                extracted["date_of_birth"] = _fmt_mrz_date(dob_raw)
+                extracted["expiry_date"]   = _fmt_mrz_date(exp_raw)
                 extracted["nationality"]   = m2[10:13].replace("<", "")
                 extracted["sex"]           = m2[20] if len(m2) > 20 else ""
         else:
+            # Fallback: regex scan for common patterns
             passport_re = re.compile(r'\b[A-Z]\d{7,8}\b')
             date_re     = re.compile(r'\b(\d{2}[\/\-\.]\d{2}[\/\-\.]\d{2,4}|\d{2}\s(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s\d{4})\b', re.I)
             pn = passport_re.findall(text)
@@ -1152,18 +1098,24 @@ async def extract_passport_details(client_id: int, admin=Depends(require_admin))
         return {"status": "extracted", "data": extracted}
 
     except ImportError:
-        return {"status": "ocr_unavailable", "message": "pytesseract not installed", "data": {}}
+        return {
+            "status":  "ocr_unavailable",
+            "message": "pytesseract not installed. Add 'pytesseract' and 'Pillow' to requirements.txt and set TESSDATA_PREFIX on Render.",
+            "data":    {}
+        }
     except Exception as e:
         return {"status": "error", "message": str(e), "data": {}}
 
 
 def _fmt_mrz_date(s: str) -> str:
+    """Convert YYMMDD to DD/MM/YYYY."""
     try:
         yy, mm, dd = s[0:2], s[2:4], s[4:6]
         year = int(yy)
         full_year = 2000 + year if year <= 30 else 1900 + year
         return f"{dd}/{mm}/{full_year}"
-    except Exception: return s
+    except Exception:
+        return s
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1179,17 +1131,18 @@ class HotelRecord(BaseModel):
     check_in:       str
     check_out:      str
     booking_ref:    Optional[str] = ""
-    booking_status: str = "confirmed"
+    booking_status: str = "confirmed"      # confirmed | tentative | cancelled
     room_type:      Optional[str] = ""
     price_per_night: Optional[float] = None
     total_price:    Optional[float] = None
     currency:       str = "INR"
     notes:          Optional[str] = ""
-    is_future:      int = 0
+    is_future:      int = 0                # 0=current, 1=future booking
 
 
 @app.post("/admin/hotel")
-def create_hotel_record(data: HotelRecord, admin=Depends(require_admin)):
+def create_hotel_record(data: HotelRecord, admin=Depends(require_roles("visa_staff"))):
+    """Create a hotel/accommodation record for a client."""
     conn = get_db()
     conn.execute("""
         INSERT INTO hotel_records
@@ -1206,7 +1159,8 @@ def create_hotel_record(data: HotelRecord, admin=Depends(require_admin)):
     if data.app_id:
         conn.execute(
             "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
-            (data.app_id, f"admin:{admin['name']}", "Hotel added", f"{data.hotel_name}, {data.city} ({data.check_in} → {data.check_out})")
+            (data.app_id, f"admin:{admin['name']}", "Hotel added",
+             f"{data.hotel_name}, {data.city} ({data.check_in} → {data.check_out})")
         )
     conn.commit()
     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -1216,25 +1170,31 @@ def create_hotel_record(data: HotelRecord, admin=Depends(require_admin)):
 
 @app.get("/admin/hotels/{client_id}")
 def get_client_hotels(client_id: int, admin=Depends(require_admin)):
+    """Get all hotel records for a client."""
     conn = get_db()
-    rows = conn.execute("SELECT * FROM hotel_records WHERE client_id=? ORDER BY check_in ASC", (client_id,)).fetchall()
+    rows = conn.execute("""
+        SELECT * FROM hotel_records
+        WHERE client_id=?
+        ORDER BY check_in ASC
+    """, (client_id,)).fetchall()
     conn.close()
-    return {
-        "current": [dict(r) for r in rows if not r["is_future"]],
-        "future": [dict(r) for r in rows if r["is_future"]],
-        "total": len(rows)
-    }
+    current = [dict(r) for r in rows if not r["is_future"]]
+    future  = [dict(r) for r in rows if r["is_future"]]
+    return {"current": current, "future": future, "total": len(rows)}
 
 
 @app.put("/admin/hotel/{hotel_id}")
-def update_hotel_record(hotel_id: int, data: dict, admin=Depends(require_admin)):
+def update_hotel_record(hotel_id: int, data: dict, admin=Depends(require_roles("visa_staff"))):
+    """Update a hotel record."""
     conn = get_db()
     allowed = ["hotel_name","city","country","check_in","check_out","booking_ref",
                "booking_status","room_type","price_per_night","total_price","notes","is_future"]
-    sets, values = [], []
+    sets   = []
+    values = []
     for k, v in data.items():
         if k in allowed:
-            sets.append(f"{k}=?"); values.append(v)
+            sets.append(f"{k}=?")
+            values.append(v)
     if sets:
         values.append(hotel_id)
         conn.execute(f"UPDATE hotel_records SET {', '.join(sets)} WHERE id=?", values)
@@ -1244,62 +1204,88 @@ def update_hotel_record(hotel_id: int, data: dict, admin=Depends(require_admin))
 
 
 @app.delete("/admin/hotel/{hotel_id}")
-def delete_hotel_record(hotel_id: int, admin=Depends(require_admin)):
+def delete_hotel_record(hotel_id: int, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
     conn.execute("DELETE FROM hotel_records WHERE id=?", (hotel_id,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return {"status": "deleted"}
 
 
 @app.get("/admin/hotels/export/all")
 def export_all_hotels(admin=Depends(require_admin)):
+    """Export all hotel records as JSON for Excel generation."""
     conn = get_db()
     rows = conn.execute("""
         SELECT h.*, c.name as client_name, c.email as client_email, c.phone as client_phone
-        FROM hotel_records h JOIN clients c ON c.id = h.client_id ORDER BY h.check_in ASC
+        FROM hotel_records h
+        JOIN clients c ON c.id = h.client_id
+        ORDER BY h.check_in ASC
     """).fetchall()
     conn.close()
     return {"hotels": [dict(r) for r in rows]}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STAFF MANAGEMENT
+# STAFF MANAGEMENT — superadmin appoints staff and assigns roles
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/admin/staff")
 def list_staff(admin=Depends(require_superadmin)):
     conn = get_db()
-    rows = conn.execute("SELECT id, name, email, role, active, created_at FROM admin_users ORDER BY created_at DESC").fetchall()
+    rows = conn.execute(
+        "SELECT id, name, email, role, active, created_at FROM admin_users ORDER BY created_at DESC"
+    ).fetchall()
     conn.close()
     return {"staff": [dict(r) for r in rows]}
+
 
 @app.post("/admin/staff")
 def create_staff(data: NewStaffRequest, admin=Depends(require_superadmin)):
     from auth import ALL_ROLES
-    if data.role not in ALL_ROLES: raise HTTPException(400, f"Role must be one of: {', '.join(ALL_ROLES)}")
+    if data.role not in ALL_ROLES:
+        raise HTTPException(400, f"Role must be one of: {', '.join(ALL_ROLES)}")
     conn = get_db()
     try:
-        conn.execute("INSERT INTO admin_users (name, email, password, role) VALUES (?,?,?,?)",
-                     (data.name, data.email, hash_password(data.password), data.role))
+        conn.execute(
+            "INSERT INTO admin_users (name, email, password, role) VALUES (?,?,?,?)",
+            (data.name, data.email, hash_password(data.password), data.role)
+        )
         conn.commit()
         new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         conn.close()
         return {"status": "created", "id": new_id}
     except Exception as e:
-        conn.close(); raise HTTPException(400, f"Error: {e}")
+        conn.close()
+        raise HTTPException(400, f"Could not create staff (duplicate email?): {e}")
+
 
 @app.put("/admin/staff/{staff_id}")
 def update_staff(staff_id: int, data: UpdateStaffRequest, admin=Depends(require_superadmin)):
     conn = get_db()
     target = conn.execute("SELECT * FROM admin_users WHERE id=?", (staff_id,)).fetchone()
-    if not target: conn.close(); raise HTTPException(404, "Staff not found")
+    if not target:
+        conn.close()
+        raise HTTPException(404, "Staff member not found")
+
     if target["role"] == "superadmin" and admin.get("id") != staff_id and data.active == 0:
-        conn.close(); raise HTTPException(400, "Cannot deactivate the superadmin")
+        conn.close()
+        raise HTTPException(400, "Cannot deactivate the superadmin account")
+
     sets, values = [], []
-    if data.name is not None: sets.append("name=?"); values.append(data.name)
-    if data.role is not None: sets.append("role=?"); values.append(data.role)
-    if data.active is not None: sets.append("active=?"); values.append(data.active)
-    if data.password: sets.append("password=?"); values.append(hash_password(data.password))
+    if data.name is not None:
+        sets.append("name=?"); values.append(data.name)
+    if data.role is not None:
+        from auth import ALL_ROLES
+        if data.role not in ALL_ROLES:
+            conn.close()
+            raise HTTPException(400, f"Role must be one of: {', '.join(ALL_ROLES)}")
+        sets.append("role=?"); values.append(data.role)
+    if data.active is not None:
+        sets.append("active=?"); values.append(data.active)
+    if data.password:
+        sets.append("password=?"); values.append(hash_password(data.password))
+
     if sets:
         values.append(staff_id)
         conn.execute(f"UPDATE admin_users SET {', '.join(sets)} WHERE id=?", values)
@@ -1307,42 +1293,56 @@ def update_staff(staff_id: int, data: UpdateStaffRequest, admin=Depends(require_
     conn.close()
     return {"status": "updated"}
 
+
 @app.delete("/admin/staff/{staff_id}")
 def delete_staff(staff_id: int, admin=Depends(require_superadmin)):
     conn = get_db()
     target = conn.execute("SELECT role FROM admin_users WHERE id=?", (staff_id,)).fetchone()
-    if not target: conn.close(); raise HTTPException(404, "Not found")
-    if target["role"] == "superadmin": conn.close(); raise HTTPException(400, "Cannot delete superadmin")
+    if not target:
+        conn.close()
+        raise HTTPException(404, "Staff member not found")
+    if target["role"] == "superadmin":
+        conn.close()
+        raise HTTPException(400, "Cannot delete the superadmin account")
     conn.execute("DELETE FROM admin_users WHERE id=?", (staff_id,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return {"status": "deleted"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# LEADS & FOLLOW-UPS
+# LEADS & FOLLOW-UPS — track inquiries before they become paying clients
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/admin/leads")
 def list_leads(status: Optional[str] = None, admin=Depends(require_roles("sales"))):
     conn = get_db()
-    query = """
-        SELECT l.*, a.name as assigned_name
-        FROM leads l LEFT JOIN admin_users a ON a.id = l.assigned_to
-    """
-    if status: rows = conn.execute(query + " WHERE l.status=? ORDER BY l.created_at DESC", (status,)).fetchall()
-    else: rows = conn.execute(query + " ORDER BY l.created_at DESC").fetchall()
-    
+    if status:
+        rows = conn.execute("""
+            SELECT l.*, a.name as assigned_name
+            FROM leads l LEFT JOIN admin_users a ON a.id = l.assigned_to
+            WHERE l.status=? ORDER BY l.created_at DESC
+        """, (status,)).fetchall()
+    else:
+        rows = conn.execute("""
+            SELECT l.*, a.name as assigned_name
+            FROM leads l LEFT JOIN admin_users a ON a.id = l.assigned_to
+            ORDER BY l.created_at DESC
+        """).fetchall()
+
     lead_ids = [r["id"] for r in rows]
     next_followups = {}
     if lead_ids:
         placeholders = ",".join("?" * len(lead_ids))
         fu_rows = conn.execute(f"""
-            SELECT lead_id, MIN(due_at) as next_due FROM lead_followups
-            WHERE status='pending' AND lead_id IN ({placeholders}) GROUP BY lead_id
+            SELECT lead_id, MIN(due_at) as next_due
+            FROM lead_followups
+            WHERE status='pending' AND lead_id IN ({placeholders})
+            GROUP BY lead_id
         """, lead_ids).fetchall()
         next_followups = {r["lead_id"]: r["next_due"] for r in fu_rows}
-    conn.close()
 
+    conn.close()
     leads = []
     for r in rows:
         d = dict(r)
@@ -1360,17 +1360,24 @@ def list_leads(status: Optional[str] = None, admin=Depends(require_roles("sales"
     }
     return {"leads": leads, "stats": stats}
 
+
 @app.get("/admin/lead/{lead_id}")
 def get_lead(lead_id: int, admin=Depends(require_roles("sales"))):
     conn = get_db()
     lead = conn.execute("""
         SELECT l.*, a.name as assigned_name
-        FROM leads l LEFT JOIN admin_users a ON a.id = l.assigned_to WHERE l.id=?
+        FROM leads l LEFT JOIN admin_users a ON a.id = l.assigned_to
+        WHERE l.id=?
     """, (lead_id,)).fetchone()
-    if not lead: conn.close(); raise HTTPException(404, "Lead not found")
-    followups = conn.execute("SELECT * FROM lead_followups WHERE lead_id=? ORDER BY due_at DESC", (lead_id,)).fetchall()
+    if not lead:
+        conn.close()
+        raise HTTPException(404, "Lead not found")
+    followups = conn.execute(
+        "SELECT * FROM lead_followups WHERE lead_id=? ORDER BY due_at DESC", (lead_id,)
+    ).fetchall()
     conn.close()
     return {"lead": dict(lead), "followups": [dict(f) for f in followups]}
+
 
 @app.post("/admin/leads")
 def create_lead(data: NewLeadRequest, admin=Depends(require_roles("sales"))):
@@ -1378,17 +1385,21 @@ def create_lead(data: NewLeadRequest, admin=Depends(require_roles("sales"))):
     conn.execute("""
         INSERT INTO leads (name, email, phone, destination, visa_type, source, notes, assigned_to, created_by)
         VALUES (?,?,?,?,?,?,?,?,?)
-    """, (data.name, data.email, data.phone, data.destination, data.visa_type, data.source, data.notes, data.assigned_to, admin["name"]))
+    """, (data.name, data.email, data.phone, data.destination, data.visa_type,
+          data.source, data.notes, data.assigned_to, admin["name"]))
     conn.commit()
     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.close()
     return {"status": "created", "id": new_id}
 
+
 @app.put("/admin/lead/{lead_id}")
 def update_lead(lead_id: int, data: UpdateLeadRequest, admin=Depends(require_roles("sales"))):
     conn = get_db()
     lead = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
-    if not lead: conn.close(); raise HTTPException(404, "Lead not found")
+    if not lead:
+        conn.close()
+        raise HTTPException(404, "Lead not found")
 
     sets, values = ["updated_at=CURRENT_TIMESTAMP"], []
     fields = {
@@ -1397,7 +1408,9 @@ def update_lead(lead_id: int, data: UpdateLeadRequest, admin=Depends(require_rol
         "status": data.status, "assigned_to": data.assigned_to, "notes": data.notes,
     }
     for col, val in fields.items():
-        if val is not None: sets.append(f"{col}=?"); values.append(val)
+        if val is not None:
+            sets.append(f"{col}=?")
+            values.append(val)
     if len(sets) > 1:
         values.append(lead_id)
         conn.execute(f"UPDATE leads SET {', '.join(sets)} WHERE id=?", values)
@@ -1405,26 +1418,37 @@ def update_lead(lead_id: int, data: UpdateLeadRequest, admin=Depends(require_rol
     conn.close()
     return {"status": "updated"}
 
+
 @app.delete("/admin/lead/{lead_id}")
 def delete_lead(lead_id: int, admin=Depends(require_roles("sales"))):
     conn = get_db()
     conn.execute("DELETE FROM lead_followups WHERE lead_id=?", (lead_id,))
     conn.execute("DELETE FROM leads WHERE id=?", (lead_id,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return {"status": "deleted"}
+
 
 @app.post("/admin/lead/{lead_id}/convert")
 def convert_lead_to_client(lead_id: int, data: ConvertLeadRequest, admin=Depends(require_roles("sales"))):
+    """Convert a won lead into a real client + application."""
     conn = get_db()
     lead = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
-    if not lead: conn.close(); raise HTTPException(404, "Lead not found")
-    if not lead["email"]: conn.close(); raise HTTPException(400, "Lead needs email")
+    if not lead:
+        conn.close()
+        raise HTTPException(404, "Lead not found")
+    if not lead["email"]:
+        conn.close()
+        raise HTTPException(400, "Lead needs an email address before converting")
 
     existing = conn.execute("SELECT id FROM clients WHERE email=?", (lead["email"],)).fetchone()
-    if existing: client_id = existing["id"]
+    if existing:
+        client_id = existing["id"]
     else:
-        conn.execute("INSERT INTO clients (name, email, phone, password) VALUES (?,?,?,?)",
-                     (lead["name"], lead["email"], lead["phone"], hash_password(data.password)))
+        conn.execute(
+            "INSERT INTO clients (name, email, phone, password) VALUES (?,?,?,?)",
+            (lead["name"], lead["email"], lead["phone"], hash_password(data.password))
+        )
         client_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
     count  = conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
@@ -1435,58 +1459,89 @@ def convert_lead_to_client(lead_id: int, data: ConvertLeadRequest, admin=Depends
         VALUES (?,?,?,?,?,?)
     """, (app_id, client_id, lead["destination"] or "TBD", lead["visa_type"] or "tourist", "pending", 10))
 
-    conn.execute("UPDATE leads SET status='won', converted_client_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (client_id, lead_id))
-    conn.execute("INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)", (app_id, f"admin:{admin['name']}", "Lead converted", f"From lead #{lead_id}"))
-    conn.commit(); conn.close()
+    conn.execute(
+        "UPDATE leads SET status='won', converted_client_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (client_id, lead_id)
+    )
+    conn.execute(
+        "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+        (app_id, f"admin:{admin['name']}", "Lead converted", f"Converted from lead #{lead_id}")
+    )
+    conn.commit()
+    conn.close()
     return {"status": "converted", "client_id": client_id, "app_id": app_id}
+
 
 @app.post("/admin/lead/{lead_id}/followup")
 def add_followup(lead_id: int, data: NewFollowupRequest, admin=Depends(require_roles("sales"))):
     conn = get_db()
+    lead = conn.execute("SELECT id FROM leads WHERE id=?", (lead_id,)).fetchone()
+    if not lead:
+        conn.close()
+        raise HTTPException(404, "Lead not found")
     conn.execute("""
-        INSERT INTO lead_followups (lead_id, due_at, note, channel, created_by) VALUES (?,?,?,?,?)
+        INSERT INTO lead_followups (lead_id, due_at, note, channel, created_by)
+        VALUES (?,?,?,?,?)
     """, (lead_id, data.due_at, data.note, data.channel, admin["name"]))
     conn.commit()
     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.close()
     return {"status": "created", "id": new_id}
 
+
 @app.post("/admin/followup/{followup_id}/complete")
 def complete_followup(followup_id: int, admin=Depends(require_roles("sales"))):
     conn = get_db()
-    conn.execute("UPDATE lead_followups SET status='done', completed_at=CURRENT_TIMESTAMP WHERE id=?", (followup_id,))
-    conn.commit(); conn.close()
+    conn.execute(
+        "UPDATE lead_followups SET status='done', completed_at=CURRENT_TIMESTAMP WHERE id=?",
+        (followup_id,)
+    )
+    conn.commit()
+    conn.close()
     return {"status": "completed"}
+
 
 @app.delete("/admin/followup/{followup_id}")
 def delete_followup(followup_id: int, admin=Depends(require_roles("sales"))):
     conn = get_db()
     conn.execute("DELETE FROM lead_followups WHERE id=?", (followup_id,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return {"status": "deleted"}
+
 
 @app.get("/admin/followups/due")
 def get_due_followups(admin=Depends(require_roles("sales"))):
+    """All pending follow-ups due today or overdue — for dashboard widget."""
     conn = get_db()
     rows = conn.execute("""
         SELECT f.*, l.name as lead_name, l.phone as lead_phone, l.destination
-        FROM lead_followups f JOIN leads l ON l.id = f.lead_id
-        WHERE f.status='pending' AND f.due_at <= datetime('now', '+1 day') ORDER BY f.due_at ASC
+        FROM lead_followups f
+        JOIN leads l ON l.id = f.lead_id
+        WHERE f.status='pending' AND f.due_at <= datetime('now', '+1 day')
+        ORDER BY f.due_at ASC
     """).fetchall()
     conn.close()
     return {"followups": [dict(r) for r in rows]}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CALENDAR
+# CALENDAR — visa appointments, travel dates, deadlines
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/admin/calendar")
-def list_calendar_events(start: Optional[str] = None, end: Optional[str] = None, admin=Depends(require_admin)):
+def list_calendar_events(
+    start: Optional[str] = None,
+    end:   Optional[str] = None,
+    admin=Depends(require_admin)
+):
+    """List calendar events, optionally filtered by date range (YYYY-MM-DD)."""
     conn = get_db()
     query  = """
         SELECT e.*, c.name as client_name, l.name as lead_name
-        FROM calendar_events e LEFT JOIN clients c ON c.id = e.client_id LEFT JOIN leads l ON l.id = e.lead_id
+        FROM calendar_events e
+        LEFT JOIN clients c ON c.id = e.client_id
+        LEFT JOIN leads l ON l.id = e.lead_id
     """
     params = []
     if start and end:
@@ -1497,16 +1552,23 @@ def list_calendar_events(start: Optional[str] = None, end: Optional[str] = None,
     conn.close()
     return {"events": [dict(r) for r in rows]}
 
+
 @app.get("/admin/calendar/upcoming")
 def upcoming_calendar_events(admin=Depends(require_admin)):
+    """Next 14 days of events — for dashboard widget."""
     conn = get_db()
     rows = conn.execute("""
         SELECT e.*, c.name as client_name, l.name as lead_name
-        FROM calendar_events e LEFT JOIN clients c ON c.id = e.client_id LEFT JOIN leads l ON l.id = e.lead_id
-        WHERE e.start_at >= datetime('now') AND e.start_at <= datetime('now', '+14 day') ORDER BY e.start_at ASC LIMIT 20
+        FROM calendar_events e
+        LEFT JOIN clients c ON c.id = e.client_id
+        LEFT JOIN leads l ON l.id = e.lead_id
+        WHERE e.start_at >= datetime('now') AND e.start_at <= datetime('now', '+14 day')
+        ORDER BY e.start_at ASC
+        LIMIT 20
     """).fetchall()
     conn.close()
     return {"events": [dict(r) for r in rows]}
+
 
 @app.post("/admin/calendar")
 def create_calendar_event(data: NewCalendarEventRequest, admin=Depends(require_admin)):
@@ -1515,18 +1577,34 @@ def create_calendar_event(data: NewCalendarEventRequest, admin=Depends(require_a
         INSERT INTO calendar_events
         (title, event_type, start_at, end_at, all_day, client_id, app_id, lead_id, location, notes, color, created_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (data.title, data.event_type, data.start_at, data.end_at, data.all_day, data.client_id, data.app_id, data.lead_id, data.location, data.notes, data.color, admin["name"]))
+    """, (
+        data.title, data.event_type, data.start_at, data.end_at, data.all_day,
+        data.client_id, data.app_id, data.lead_id, data.location, data.notes,
+        data.color, admin["name"]
+    ))
+    if data.app_id:
+        conn.execute(
+            "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+            (data.app_id, f"admin:{admin['name']}", "Calendar event added",
+             f"{data.title} on {data.start_at}")
+        )
     conn.commit()
     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.close()
     return {"status": "created", "id": new_id}
 
+
 @app.put("/admin/calendar/{event_id}")
 def update_calendar_event(event_id: int, data: UpdateCalendarEventRequest, admin=Depends(require_admin)):
     conn = get_db()
+    event = conn.execute("SELECT id FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+    if not event:
+        conn.close()
+        raise HTTPException(404, "Event not found")
     sets, values = [], []
     for col, val in data.dict(exclude_unset=True).items():
-        sets.append(f"{col}=?"); values.append(val)
+        sets.append(f"{col}=?")
+        values.append(val)
     if sets:
         values.append(event_id)
         conn.execute(f"UPDATE calendar_events SET {', '.join(sets)} WHERE id=?", values)
@@ -1534,11 +1612,13 @@ def update_calendar_event(event_id: int, data: UpdateCalendarEventRequest, admin
     conn.close()
     return {"status": "updated"}
 
+
 @app.delete("/admin/calendar/{event_id}")
 def delete_calendar_event(event_id: int, admin=Depends(require_admin)):
     conn = get_db()
     conn.execute("DELETE FROM calendar_events WHERE id=?", (event_id,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return {"status": "deleted"}
 
 
@@ -1553,12 +1633,18 @@ def _calc_invoice_totals(line_items: list, discount: float, tax_percent: float):
     total      = after_disc + tax_amount
     return subtotal, tax_amount, total
 
+
 @app.get("/admin/invoices")
-def list_invoices(status: Optional[str] = None, admin=Depends(require_roles("accounts"))):
+def list_invoices(status: Optional[str] = None, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
-    query  = "SELECT i.*, c.name as client_name, c.email as client_email, c.phone as client_phone FROM invoices i JOIN clients c ON c.id = i.client_id"
+    query  = """
+        SELECT i.*, c.name as client_name, c.email as client_email, c.phone as client_phone
+        FROM invoices i JOIN clients c ON c.id = i.client_id
+    """
     params = []
-    if status: query += " WHERE i.status=?"; params = [status]
+    if status:
+        query += " WHERE i.status=?"
+        params = [status]
     query += " ORDER BY i.created_at DESC"
     rows = conn.execute(query, params).fetchall()
     conn.close()
@@ -1574,91 +1660,170 @@ def list_invoices(status: Optional[str] = None, admin=Depends(require_roles("acc
         "total_invoiced":  round(sum(i["total"] for i in invoices), 2),
         "total_collected": round(sum(i["amount_paid"] for i in invoices), 2),
         "total_due":       round(sum(i["balance_due"] for i in invoices), 2),
+        "total_count":     len(invoices),
         "unpaid_count":    sum(1 for i in invoices if i["status"] == "unpaid"),
         "overdue_count":   sum(1 for i in invoices if i["status"] == "overdue"),
     }
     return {"invoices": invoices, "stats": stats}
 
+
 @app.get("/admin/invoice/{invoice_id}")
-def get_invoice(invoice_id: int, admin=Depends(require_roles("accounts"))):
+def get_invoice(invoice_id: int, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
-    inv = conn.execute("SELECT i.*, c.name as client_name, c.email as client_email, c.phone as client_phone FROM invoices i JOIN clients c ON c.id = i.client_id WHERE i.id=?", (invoice_id,)).fetchone()
-    payments = conn.execute("SELECT * FROM invoice_payments WHERE invoice_id=? ORDER BY paid_at DESC", (invoice_id,)).fetchall()
+    inv = conn.execute("""
+        SELECT i.*, c.name as client_name, c.email as client_email, c.phone as client_phone
+        FROM invoices i JOIN clients c ON c.id = i.client_id
+        WHERE i.id=?
+    """, (invoice_id,)).fetchone()
+    if not inv:
+        conn.close()
+        raise HTTPException(404, "Invoice not found")
+    payments = conn.execute(
+        "SELECT * FROM invoice_payments WHERE invoice_id=? ORDER BY paid_at DESC", (invoice_id,)
+    ).fetchall()
     conn.close()
     d = dict(inv)
     d["line_items"] = json.loads(d["line_items_json"])
     d["balance_due"] = round((d["total"] or 0) - (d["amount_paid"] or 0), 2)
     return {"invoice": d, "payments": [dict(p) for p in payments]}
 
+
 @app.post("/admin/invoice")
-def create_invoice(data: NewInvoiceRequest, admin=Depends(require_roles("accounts"))):
+def create_invoice(data: NewInvoiceRequest, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
+    client = conn.execute("SELECT id FROM clients WHERE id=?", (data.client_id,)).fetchone()
+    if not client:
+        conn.close()
+        raise HTTPException(404, "Client not found")
+
     subtotal, tax_amount, total = _calc_invoice_totals(data.line_items, data.discount, data.tax_percent)
     count = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
     invoice_no = f"INV-{datetime.now().year}-{str(count+1).zfill(3)}"
-    line_items_json = json.dumps([{"label": li.label, "qty": li.qty, "unit_price": li.unit_price, "amount": round(li.qty * li.unit_price, 2)} for li in data.line_items])
+
+    line_items_json = json.dumps([
+        {"label": li.label, "qty": li.qty, "unit_price": li.unit_price, "amount": round(li.qty * li.unit_price, 2)}
+        for li in data.line_items
+    ])
 
     conn.execute("""
-        INSERT INTO invoices (invoice_no, client_id, app_id, line_items_json, subtotal, discount, tax_percent, tax_amount, total, due_date, notes, created_by)
+        INSERT INTO invoices
+        (invoice_no, client_id, app_id, line_items_json, subtotal, discount, tax_percent, tax_amount, total, due_date, notes, created_by)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (invoice_no, data.client_id, data.app_id, line_items_json, round(subtotal, 2), data.discount, data.tax_percent, round(tax_amount, 2), round(total, 2), data.due_date, data.notes, admin["name"]))
+    """, (
+        invoice_no, data.client_id, data.app_id, line_items_json,
+        round(subtotal, 2), data.discount, data.tax_percent, round(tax_amount, 2),
+        round(total, 2), data.due_date, data.notes, admin["name"]
+    ))
+
+    if data.app_id:
+        conn.execute(
+            "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+            (data.app_id, f"admin:{admin['name']}", "Invoice created",
+             f"{invoice_no} — total ₹{total:.2f}")
+        )
+
     conn.commit()
     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.close()
     return {"status": "created", "id": new_id, "invoice_no": invoice_no, "total": round(total, 2)}
 
+
 @app.put("/admin/invoice/{invoice_id}")
-def update_invoice(invoice_id: int, data: UpdateInvoiceRequest, admin=Depends(require_roles("accounts"))):
+def update_invoice(invoice_id: int, data: UpdateInvoiceRequest, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
     inv = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+    if not inv:
+        conn.close()
+        raise HTTPException(404, "Invoice not found")
+
     sets, values = ["updated_at=CURRENT_TIMESTAMP"], []
 
     if data.line_items is not None:
         discount    = data.discount if data.discount is not None else inv["discount"]
         tax_percent = data.tax_percent if data.tax_percent is not None else inv["tax_percent"]
         subtotal, tax_amount, total = _calc_invoice_totals(data.line_items, discount, tax_percent)
-        line_items_json = json.dumps([{"label": li.label, "qty": li.qty, "unit_price": li.unit_price, "amount": round(li.qty * li.unit_price, 2)} for li in data.line_items])
+        line_items_json = json.dumps([
+            {"label": li.label, "qty": li.qty, "unit_price": li.unit_price, "amount": round(li.qty * li.unit_price, 2)}
+            for li in data.line_items
+        ])
         sets += ["line_items_json=?", "subtotal=?", "discount=?", "tax_percent=?", "tax_amount=?", "total=?"]
         values += [line_items_json, round(subtotal, 2), discount, tax_percent, round(tax_amount, 2), round(total, 2)]
-    
-    if data.due_date is not None: sets.append("due_date=?"); values.append(data.due_date)
-    if data.notes is not None: sets.append("notes=?"); values.append(data.notes)
-    if data.status is not None: sets.append("status=?"); values.append(data.status)
+    elif data.discount is not None or data.tax_percent is not None:
+        existing_items = json.loads(inv["line_items_json"])
+        items = [InvoiceLineItem(label=i["label"], qty=i["qty"], unit_price=i["unit_price"]) for i in existing_items]
+        discount    = data.discount if data.discount is not None else inv["discount"]
+        tax_percent = data.tax_percent if data.tax_percent is not None else inv["tax_percent"]
+        subtotal, tax_amount, total = _calc_invoice_totals(items, discount, tax_percent)
+        sets += ["discount=?", "tax_percent=?", "tax_amount=?", "total=?"]
+        values += [discount, tax_percent, round(tax_amount, 2), round(total, 2)]
+
+    if data.due_date is not None:
+        sets.append("due_date=?"); values.append(data.due_date)
+    if data.notes is not None:
+        sets.append("notes=?"); values.append(data.notes)
+    if data.status is not None:
+        sets.append("status=?"); values.append(data.status)
 
     values.append(invoice_id)
     conn.execute(f"UPDATE invoices SET {', '.join(sets)} WHERE id=?", values)
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return {"status": "updated"}
 
+
 @app.delete("/admin/invoice/{invoice_id}")
-def delete_invoice(invoice_id: int, admin=Depends(require_roles("accounts"))):
+def delete_invoice(invoice_id: int, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
     conn.execute("DELETE FROM invoice_payments WHERE invoice_id=?", (invoice_id,))
     conn.execute("DELETE FROM invoices WHERE id=?", (invoice_id,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     return {"status": "deleted"}
 
+
 @app.post("/admin/invoice/{invoice_id}/payment")
-def record_payment(invoice_id: int, data: RecordPaymentRequest, admin=Depends(require_roles("accounts"))):
+def record_payment(invoice_id: int, data: RecordPaymentRequest, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
     inv = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+    if not inv:
+        conn.close()
+        raise HTTPException(404, "Invoice not found")
+
     paid_at = data.paid_at or datetime.now().strftime("%Y-%m-%d")
-    
     conn.execute("""
-        INSERT INTO invoice_payments (invoice_id, amount, method, reference, paid_at, notes, recorded_by) VALUES (?,?,?,?,?,?,?)
+        INSERT INTO invoice_payments (invoice_id, amount, method, reference, paid_at, notes, recorded_by)
+        VALUES (?,?,?,?,?,?,?)
     """, (invoice_id, data.amount, data.method, data.reference, paid_at, data.notes, admin["name"]))
 
     new_paid  = (inv["amount_paid"] or 0) + data.amount
     new_status = "paid" if new_paid >= inv["total"] else ("partial" if new_paid > 0 else "unpaid")
 
-    conn.execute("UPDATE invoices SET amount_paid=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (round(new_paid, 2), new_status, invoice_id))
-    conn.commit(); conn.close()
-    return {"status": "recorded"}
+    conn.execute(
+        "UPDATE invoices SET amount_paid=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (round(new_paid, 2), new_status, invoice_id)
+    )
+
+    if inv["app_id"]:
+        conn.execute(
+            "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+            (inv["app_id"], f"admin:{admin['name']}", "Payment recorded",
+             f"₹{data.amount:.2f} via {data.method} for {inv['invoice_no']}")
+        )
+
+    conn.commit()
+    conn.close()
+    return {"status": "recorded", "new_status": new_status, "amount_paid": round(new_paid, 2)}
+
 
 @app.get("/admin/invoices/export")
-def export_invoices(admin=Depends(require_roles("accounts"))):
+def export_invoices(admin=Depends(require_roles("visa_staff"))):
+    """Flat export of all invoices for Excel/CSV download."""
     conn = get_db()
-    rows = conn.execute("SELECT i.*, c.name as client_name, c.email as client_email, c.phone as client_phone FROM invoices i JOIN clients c ON c.id = i.client_id ORDER BY i.created_at DESC").fetchall()
+    rows = conn.execute("""
+        SELECT i.*, c.name as client_name, c.email as client_email, c.phone as client_phone
+        FROM invoices i JOIN clients c ON c.id = i.client_id
+        ORDER BY i.created_at DESC
+    """).fetchall()
     conn.close()
     out = []
     for r in rows:
@@ -1666,96 +1831,3 @@ def export_invoices(admin=Depends(require_roles("accounts"))):
         d["balance_due"] = round((d["total"] or 0) - (d["amount_paid"] or 0), 2)
         out.append(d)
     return {"invoices": out}
-# --- Real-Time Messaging & Control System ──────────────────────────────────
-@app.websocket("/ws/chat")
-async def websocket_chat_endpoint(websocket: WebSocket, token: str = None):
-    if not token:
-        await websocket.close(code=4001)
-        return
-    try:
-        payload = decode_token(token)
-        user_id = str(payload.get("id"))
-        user_name = payload.get("name")
-        user_role = payload.get("role")
-        user_email = payload.get("sub")
-    except Exception:
-        await websocket.close(code=4002)
-        return
-
-    details = {"name": user_name, "role": user_role, "email": user_email}
-    await manager.connect(user_id, details, websocket)
-    log_action(user_id, user_name, user_role, "Chat Connection", "Connected to live session")
-
-    try:
-        while True:
-            # Expected incoming payload syntax: {"text": "Message content here", "receiver_id": "target_id_or_null"}
-            data = await websocket.receive_json()
-            message_text = data.get("text", "").strip()
-            receiver_id = data.get("receiver_id")
-            
-            if not message_text:
-                continue
-                
-            # Write to conversation history
-            conn = get_db()
-            conn.execute(
-                "INSERT INTO chat_messages (sender_id, sender_name, sender_role, receiver_id, message) VALUES (?,?,?,?,?)",
-                (user_id, user_name, user_role, receiver_id, message_text)
-            )
-            conn.commit()
-            conn.close()
-
-            broadcast_payload = {
-                "type": "message",
-                "sender_id": user_id,
-                "sender_name": user_name,
-                "sender_role": user_role,
-                "receiver_id": receiver_id,
-                "message": message_text,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-
-            if receiver_id:
-                # Private Room routing: Dispatch exclusively to Target User + Mirror back to Sender
-                await manager.send_personal_message(broadcast_payload, str(receiver_id))
-                await manager.send_personal_message(broadcast_payload, user_id)
-            else:
-                # General Room routing: Distribute to everyone
-                await manager.broadcast_to_group(broadcast_payload)
-
-    except WebSocketDisconnect:
-        await manager.disconnect(user_id)
-        log_action(user_id, user_name, user_role, "Chat Disconnection", "Left active workspace")
-
-@app.get("/admin/chat/history")
-def get_chat_history(receiver_id: Optional[str] = None, admin=Depends(require_admin)):
-    current_user_id = str(admin["id"])
-    conn = get_db()
-    if receiver_id:
-        # Pull records corresponding to direct message stream
-        rows = conn.execute("""
-            SELECT * FROM chat_messages 
-            WHERE (sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?)
-            ORDER BY created_at ASC
-        """, (current_user_id, receiver_id, receiver_id, current_user_id)).fetchall()
-    else:
-        # Pull global workspace chat channel
-        rows = conn.execute("SELECT * FROM chat_messages WHERE receiver_id IS NULL ORDER BY created_at ASC").fetchall()
-    conn.close()
-    return {"messages": [dict(r) for r in rows]}
-
-@app.get("/admin/audit-logs")
-def get_audit_logs(admin=Depends(require_superadmin)):
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200").fetchall()
-    conn.close()
-    return {"logs": [dict(r) for r in rows]}
-
-@app.get("/admin/staff/presence")
-def get_live_presence(admin=Depends(require_superadmin)):
-    return {
-        "online_users": [
-            {"id": uid, "name": details["name"], "role": details["role"], "email": details["email"]}
-            for uid, details in manager.user_details.items()
-        ]
-    }
