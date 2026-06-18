@@ -7,7 +7,7 @@ import json
 import shutil
 import tempfile
 from datetime import datetime
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
@@ -35,6 +35,64 @@ STATUS_PROGRESS = {
     "pending": 10, "docs_received": 35, "review": 55,
     "submitted": 75, "approved": 100, "rejected": 0,
 }
+
+# --- Real-time Session & Chat Manager ───────────────────────────────────────
+class ConnectionManager:
+    def __init__(self):
+        # Maps string user_id -> active WebSocket instance
+        self.active_connections: dict[str, WebSocket] = {}
+        # Stores user metadata for live online display tracking
+        self.user_details: dict[str, dict] = {}
+
+    async def connect(self, user_id: str, details: dict, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections[user_id] = websocket
+        self.user_details[user_id] = details
+        await self.broadcast_presence()
+
+    async def disconnect(self, user_id: str):
+        if user_id in self.active_connections:
+            del self.active_connections[user_id]
+        if user_id in self.user_details:
+            del self.user_details[user_id]
+        await self.broadcast_presence()
+
+    async def send_personal_message(self, message: dict, receiver_id: str):
+        if receiver_id in self.active_connections:
+            await self.active_connections[receiver_id].send_json(message)
+
+    async def broadcast_to_group(self, message: dict):
+        for connection in self.active_connections.values():
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass
+
+    async def broadcast_presence(self):
+        presence_data = {
+            "type": "presence_update",
+            "online_users": [
+                {"id": uid, "name": info["name"], "role": info["role"], "email": info["email"]}
+                for uid, info in self.user_details.items()
+            ]
+        }
+        for connection in self.active_connections.values():
+            try:
+                await connection.send_json(presence_data)
+            except Exception:
+                pass
+
+manager = ConnectionManager()
+
+# Audit Log Helper Function
+def log_action(user_id: str, user_name: str, user_role: str, action: str, details: str = None):
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO audit_logs (user_id, user_name, user_role, action, details) VALUES (?,?,?,?,?)",
+        (str(user_id), user_name, user_role, action, details)
+    )
+    conn.commit()
+    conn.close()
 
 # --- Schemas ───────────────────────────────────────────────────────────────────
 class LoginRequest(BaseModel):
@@ -197,8 +255,12 @@ def serve_client():
 
 # --- Auth ──────────────────────────────────────────────────────────────────────
 @app.post("/auth/admin/login")
-def login_admin(data: LoginRequest): return admin_login(data.email, data.password)
-
+def login_admin(data: LoginRequest):
+    res = admin_login(data.email, data.password)
+    # Log successful login to system audit trails
+    log_action(res["id"], res["name"], res["role"], "Login", f"Logged in from admin dashboard panel")
+    return res
+    
 @app.post("/auth/client/login")
 def login_client(data: LoginRequest): return client_login(data.email, data.password)
 
@@ -1571,3 +1633,96 @@ def export_invoices(admin=Depends(require_roles("accounts"))):
         d["balance_due"] = round((d["total"] or 0) - (d["amount_paid"] or 0), 2)
         out.append(d)
     return {"invoices": out}
+# --- Real-Time Messaging & Control System ──────────────────────────────────
+@app.websocket("/ws/chat")
+async def websocket_chat_endpoint(websocket: WebSocket, token: str = None):
+    if not token:
+        await websocket.close(code=4001)
+        return
+    try:
+        payload = decode_token(token)
+        user_id = str(payload.get("id"))
+        user_name = payload.get("name")
+        user_role = payload.get("role")
+        user_email = payload.get("sub")
+    except Exception:
+        await websocket.close(code=4002)
+        return
+
+    details = {"name": user_name, "role": user_role, "email": user_email}
+    await manager.connect(user_id, details, websocket)
+    log_action(user_id, user_name, user_role, "Chat Connection", "Connected to live session")
+
+    try:
+        while True:
+            # Expected incoming payload syntax: {"text": "Message content here", "receiver_id": "target_id_or_null"}
+            data = await websocket.receive_json()
+            message_text = data.get("text", "").strip()
+            receiver_id = data.get("receiver_id")
+            
+            if not message_text:
+                continue
+                
+            # Write to conversation history
+            conn = get_db()
+            conn.execute(
+                "INSERT INTO chat_messages (sender_id, sender_name, sender_role, receiver_id, message) VALUES (?,?,?,?,?)",
+                (user_id, user_name, user_role, receiver_id, message_text)
+            )
+            conn.commit()
+            conn.close()
+
+            broadcast_payload = {
+                "type": "message",
+                "sender_id": user_id,
+                "sender_name": user_name,
+                "sender_role": user_role,
+                "receiver_id": receiver_id,
+                "message": message_text,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+            if receiver_id:
+                # Private Room routing: Dispatch exclusively to Target User + Mirror back to Sender
+                await manager.send_personal_message(broadcast_payload, str(receiver_id))
+                await manager.send_personal_message(broadcast_payload, user_id)
+            else:
+                # General Room routing: Distribute to everyone
+                await manager.broadcast_to_group(broadcast_payload)
+
+    except WebSocketDisconnect:
+        await manager.disconnect(user_id)
+        log_action(user_id, user_name, user_role, "Chat Disconnection", "Left active workspace")
+
+@app.get("/admin/chat/history")
+def get_chat_history(receiver_id: Optional[str] = None, admin=Depends(require_admin)):
+    current_user_id = str(admin["id"])
+    conn = get_db()
+    if receiver_id:
+        # Pull records corresponding to direct message stream
+        rows = conn.execute("""
+            SELECT * FROM chat_messages 
+            WHERE (sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?)
+            ORDER BY created_at ASC
+        """, (current_user_id, receiver_id, receiver_id, current_user_id)).fetchall()
+    else:
+        # Pull global workspace chat channel
+        rows = conn.execute("SELECT * FROM chat_messages WHERE receiver_id IS NULL ORDER BY created_at ASC").fetchall()
+    conn.close()
+    return {"messages": [dict(r) for r in rows]}
+
+@app.get("/admin/audit-logs")
+def get_audit_logs(admin=Depends(require_superadmin)):
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200").fetchall()
+    conn.close()
+    return {"logs": [dict(r) for r in rows]}
+
+@app.get("/admin/staff/presence")
+def get_live_presence(admin=Depends(require_superadmin)):
+    return {
+        "online_users": [
+            {"id": uid, "name": details["name"], "role": details["role"], "email": details["email"]}
+            for uid, details in manager.user_details.items()
+        ]
+    }
