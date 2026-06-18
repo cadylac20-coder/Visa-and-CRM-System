@@ -85,7 +85,7 @@ def init_db():
         )
     """)
 
-    # ──  Visa requirements (read-only, from visa_requirements.py) ────────
+    # ── NEW: Visa requirements (read-only, from visa_requirements.py) ────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS visa_requirements (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,7 +96,7 @@ def init_db():
         )
     """)
 
-    # ──  Custom checklist templates with pricing ────────────────────────
+    # ── NEW: Custom checklist templates with pricing ────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS custom_checklists (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,7 +115,7 @@ def init_db():
         )
     """)
 
-    # ──  Client pricing/discounts ──────────────────────────────────────
+    # ── NEW: Client pricing/discounts ──────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS client_discounts (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,7 +155,7 @@ def init_db():
         )
     """)
 
-    # ── Communication log (WhatsApp, SMS, Email) ──────────────────────
+    # ── NEW: Communication log (WhatsApp, SMS, Email) ──────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS communication_log (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -339,32 +339,6 @@ def init_db():
             'VIS-2026-001',
             'Your application has been submitted to the UAE Embassy. Expected decision in 5-7 working days.',
             0)
-    """)
-
-    # ── Chat Messages Table ───────────────────────────────────────────────────
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS chat_messages (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            sender_id   TEXT NOT NULL,
-            sender_name TEXT NOT NULL,
-            sender_role TEXT NOT NULL,
-            receiver_id TEXT, -- NULL implies Group Chat, specific ID means private chat
-            message     TEXT NOT NULL,
-            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # ── General Audit / User Activity Logs ────────────────────────────────────
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS audit_logs (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id     TEXT NOT NULL,
-            user_name   TEXT NOT NULL,
-            user_role   TEXT NOT NULL,
-            action      TEXT NOT NULL,
-            details     TEXT,
-            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
     """)
 
     # ── Seed demo lead ──────────────────────────────────────────────────────
