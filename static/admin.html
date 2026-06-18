@@ -535,7 +535,7 @@ tbody tr:hover{background:var(--surface2)}
       <!-- PACKAGES -->
       <div class="view" id="view-packages">
         <div class="page-header">
-          <div><h2>Visa Packages</h2><p>Standard packages with pricing and document requirements</p></div>
+          <div><h2>Packages</h2><p>Standard packages with pricing and document requirements</p></div>
           <button class="btn btn-primary btn-sm" onclick="openModal('new-package-modal')">+ New Package</button>
         </div>
         <div class="packages-grid" id="packages-grid"></div>
@@ -3775,11 +3775,11 @@ async function deleteStaffConfirm(id, name) {
         <div class="form-row">
           <div class="form-group">
             <label>Check-in Date</label>
-            <input type="date" id="hotel-checkin">
+            <input type="date" id="hotel-checkin" onchange="calcHotelTotal()">
           </div>
           <div class="form-group">
             <label>Check-out Date</label>
-            <input type="date" id="hotel-checkout">
+            <input type="date" id="hotel-checkout" onchange="calcHotelTotal()">
           </div>
         </div>
         <div class="form-row">
