@@ -253,11 +253,11 @@ tbody tr:hover{background:var(--surface2)}
     <div id="login-error" class="login-error">Invalid credentials</div>
     <div class="form-group" style="margin-bottom:12px">
       <label>Email</label>
-      <input type="email" id="login-email" placeholder="admin@uniglobemkov.in" value="admin@uniglobemkov.in">
+      <input type="email" id="login-email" placeholder="admin@uniglobemkov.in">
     </div>
     <div class="form-group" style="margin-bottom:20px">
       <label>Password</label>
-      <input type="password" id="login-password" placeholder="Password" value="admin123" onkeydown="if(event.key==='Enter')doLogin()">
+      <input type="password" id="login-password" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">Sign In</button>
   </div>
@@ -535,7 +535,7 @@ tbody tr:hover{background:var(--surface2)}
       <!-- PACKAGES -->
       <div class="view" id="view-packages">
         <div class="page-header">
-          <div><h2>Packages</h2><p>Standard packages with pricing and document requirements</p></div>
+          <div><h2>Visa Packages</h2><p>Standard packages with pricing and document requirements</p></div>
           <button class="btn btn-primary btn-sm" onclick="openModal('new-package-modal')">+ New Package</button>
         </div>
         <div class="packages-grid" id="packages-grid"></div>
@@ -793,8 +793,7 @@ tbody tr:hover{background:var(--surface2)}
           <div class="card-title">Role Permissions</div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;font-size:13px">
             <div><strong style="color:var(--teal)">Sales</strong><p style="color:var(--text3);margin-top:4px">Leads, follow-ups, clients, messaging, packages</p></div>
-            <div><strong style="color:var(--blue)">Operations</strong><p style="color:var(--text3);margin-top:4px">Applications, documents, checklists, hotels</p></div>
-            <div><strong style="color:var(--gold)">Accounts</strong><p style="color:var(--text3);margin-top:4px">Invoices, payments, fee structure, exports</p></div>
+            <div><strong style="color:var(--blue)">Visa Staff</strong><p style="color:var(--text3);margin-top:4px">Applications, documents, checklists, hotels, invoices, payments, fee structure</p></div>
             <div><strong style="color:var(--red)">Super Admin</strong><p style="color:var(--text3);margin-top:4px">Full access to everything, including staff management</p></div>
           </div>
         </div>
@@ -1140,25 +1139,25 @@ let CURRENT_ROLE = null;
 let CURRENT_STAFF_ID = null;
 
 function roleLabel(role) {
-  return {superadmin:'Super Admin', staff:'Staff', sales:'Sales', operations:'Operations', accounts:'Accounts'}[role] || role;
+  return {superadmin:'Super Admin', staff:'Staff', sales:'Sales', visa_staff:'Visa Staff'}[role] || role;
 }
 
 // Map each sidebar nav page to the role(s) allowed to see it.
 // superadmin/staff always see everything regardless of this map.
 const ROLE_PAGE_ACCESS = {
   dashboard: null,            // everyone
-  applications: ['operations'],
-  clients: ['sales','operations'],
-  vfs: ['operations'],
-  packages: ['operations','sales'],
-  messages: ['sales','operations'],
-  'client-profile': ['sales','operations','accounts'],
-  hotels: ['operations'],
+  applications: ['visa_staff'],
+  clients: ['sales','visa_staff'],
+  vfs: ['visa_staff'],
+  packages: ['visa_staff','sales'],
+  messages: ['sales','visa_staff'],
+  'client-profile': ['sales','visa_staff'],
+  hotels: ['visa_staff'],
   leads: ['sales'],
   calendar: null,              // everyone
-  invoices: ['accounts'],
+  invoices: ['visa_staff'],
   'staff-management': [],      // superadmin only
-  export: ['accounts','operations'],
+  export: ['visa_staff'],
 };
 
 function applyRoleVisibility(role) {
@@ -1225,7 +1224,7 @@ async function loadDashboard() {
     document.getElementById('stat-review').textContent   = s.review;
     document.getElementById('stat-approved').textContent = s.approved;
     document.getElementById('stat-clients').textContent  = s.clients;
-    document.getElementById('nav-pending-count').textContent = s.pending;
+    document.getElementById('nav-pending-count').textContent = s.total;
 
     const tbody = document.getElementById('dashboard-apps-table');
     tbody.innerHTML = data.applications.slice(0,10).map(a => `
@@ -1419,20 +1418,6 @@ async function loadTeamNotes(appId) {
   } catch(e) {}
 }
 
-function handleDocAction(appId, docType, status, docId) {
-  if (status === 'uploaded') {
-    if (confirm('Mark this document as verified?')) {
-      api(`/admin/application/${appId}/verify-doc`, {
-        method:'POST', body: JSON.stringify({doc_id: parseInt(docId), status:'verified'})
-      }).then(() => { toast('Document verified'); viewApp(appId); });
-    }
-  } else if (status === 'verified') {
-    toast('Document already verified');
-  } else {
-    toast('No file uploaded yet for this document');
-  }
-}
-
 // ── Status Update ─────────────────────────────────────────────────────────────
 function openStatusModal() { openModal('status-modal'); }
 
@@ -1451,23 +1436,6 @@ async function submitStatusUpdate() {
 }
 
 // ── Clients ───────────────────────────────────────────────────────────────────
-async function loadClients() {
-  try {
-    const data = await api('/admin/dashboard');
-    const clients = [...new Map(data.applications.map(a => [a.client_email, a])).values()];
-    document.getElementById('clients-table').innerHTML = clients.map(c => `
-      <tr>
-        <td><strong>${c.client_name}</strong></td>
-        <td>${c.client_email}</td>
-        <td>${c.client_phone || '—'}</td>
-        <td>${data.applications.filter(a => a.client_email === c.client_email).length}</td>
-        <td>—</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="window.open('mailto:${c.client_email}')">Email</button></td>
-      </tr>
-    `).join('');
-  } catch(e) { console.error(e); }
-}
-
 async function createClient() {
   const name     = document.getElementById('nc-name').value.trim();
   const email    = document.getElementById('nc-email').value.trim();
@@ -1760,74 +1728,6 @@ async function fetchAppForMessage(appId) {
   } catch(e) {}
 }
 
-function updateMsgTemplate() {
-  const type = document.getElementById('msg-type').value;
-  const container = document.getElementById('msg-type-options');
-  if (type === 'status') {
-    container.innerHTML = `
-      <div class="form-group" style="margin-bottom:12px">
-        <label>New Status</label>
-        <select id="msg-status"><option value="pending">Pending</option><option value="docs_received">Docs Received</option><option value="review">Under Review</option><option value="submitted">Submitted</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
-      </div>
-      <div class="form-group" style="margin-bottom:12px"><label>Note</label><textarea id="msg-note" placeholder="Optional note for client..."></textarea></div>
-    `;
-  } else if (type === 'reminder') {
-    container.innerHTML = `<div class="form-group" style="margin-bottom:12px"><label>Missing Documents (one per line)</label><textarea id="msg-missing" placeholder="Passport\nBank Statement\n..."></textarea></div>`;
-  } else if (type === 'custom') {
-    container.innerHTML = `<div class="form-group" style="margin-bottom:12px"><label>Custom Message</label><textarea id="msg-custom" placeholder="Type your message..."></textarea></div>`;
-  } else {
-    container.innerHTML = '';
-  }
-}
-
-async function sendMessage() {
-  const appId    = document.getElementById('msg-app-id').value.trim();
-  const type     = document.getElementById('msg-type').value;
-  const channels = getActiveChannels(document.getElementById('view-messages'));
-  if (!appId) return toast('Enter an Application ID','error');
-  if (channels.length === 0) return toast('Select at least one channel','error');
-
-  let endpoint = '', body = {app_id: appId, channels};
-
-  if (type === 'checklist') {
-    endpoint = '/admin/send-checklist';
-  } else if (type === 'status') {
-    endpoint = '/admin/send-status-update';
-    body.new_status = document.getElementById('msg-status')?.value || 'review';
-    body.note = document.getElementById('msg-note')?.value || '';
-  } else if (type === 'reminder') {
-    endpoint = '/admin/send-reminder';
-    body.missing_docs = document.getElementById('msg-missing')?.value.split('\n').filter(Boolean) || [];
-  } else {
-    toast('Custom messages — use WhatsApp directly for now','error');
-    return;
-  }
-
-  try {
-    await api(endpoint, {method:'POST', body: JSON.stringify(body)});
-    document.getElementById('msg-result').innerHTML = `<div style="color:var(--green);font-size:13px">✓ Sent via ${channels.join(', ')}</div>`;
-    toast('Message sent successfully');
-    loadRecentComms();
-  } catch(e) { toast('Error sending message','error'); }
-}
-
-async function loadRecentComms() {
-  // Show last 5 from webhook log
-  try {
-    const data = await api('/admin/webhook-log');
-    document.getElementById('recent-comms').innerHTML = data.slice(0,8).map(l => `
-      <div class="comm-item">
-        <div class="comm-channel email">📤</div>
-        <div class="comm-body">
-          <div class="comm-title">${l.event?.replace('_',' ')}</div>
-          <div class="comm-time">${l.created_at?.split('T')[0] || ''}</div>
-        </div>
-        <div class="comm-status ${l.status}">${l.status}</div>
-      </div>
-    `).join('') || '<p style="font-size:13px;color:var(--text3)">No messages sent yet.</p>';
-  } catch(e) {}
-}
-
 function quickSendMsg(appId) {
   nav('messages');
   document.getElementById('msg-app-id').value = appId;
@@ -1841,42 +1741,6 @@ function openSendModal() {
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────
-async function exportCRM(type) {
-  try {
-    const data = await api('/admin/dashboard');
-    let csv = '';
-
-    if (type === 'full' || type === 'applications') {
-      const headers = ['App ID','Client Name','Email','Phone','Destination','Visa Type','Status','Progress %','Travel Date','Created At'];
-      const rows = data.applications.map(a => [
-        a.app_id, a.client_name, a.client_email, a.client_phone || '',
-        a.destination, a.visa_type, a.status, a.progress,
-        a.travel_date || '', a.created_at?.split('T')[0] || ''
-      ]);
-      csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    } else if (type === 'clients') {
-      const seen = new Set();
-      const clients = data.applications.filter(a => {
-        if (seen.has(a.client_email)) return false;
-        seen.add(a.client_email); return true;
-      });
-      csv = [['Name','Email','Phone','Total Applications'],...clients.map(c => [
-        c.client_name, c.client_email, c.client_phone || '',
-        data.applications.filter(a => a.client_email === c.client_email).length
-      ])].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    }
-
-    if (!csv) { toast('No data to export','error'); return; }
-
-    const blob = new Blob([csv], {type:'text/csv'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `mkov_${type}_export_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    toast('Export downloaded');
-  } catch(e) { toast('Export failed — check connection','error'); }
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getActiveChannels(container) {
   return Array.from(container.querySelectorAll('.channel-btn.active')).map(b => {
@@ -2610,7 +2474,6 @@ async function sendMessage() {
 }
 
 // Load msg clients when navigating to messages
-const _origLoadRecentComms = loadRecentComms;
 function loadRecentComms() {
   loadMsgClients();
 }
@@ -2957,37 +2820,91 @@ async function saveExtractedPassport(clientId, modalEl) {
 // ── CRM Full Export (enhanced with hotels) ────────────────────────────────────
 async function exportCRM(type) {
   try {
-    const data = await api('/admin/dashboard');
-    let csv = '';
-
-    if (type === 'full' || type === 'applications') {
-      const headers = ['App ID','Client','Email','Phone','Destination','Visa Type','Status','Progress %','Travel Date','Created'];
-      const rows = data.applications.map(a => [
-        a.app_id, a.client_name, a.client_email, a.client_phone || '',
-        a.destination, a.visa_type, a.status, a.progress,
-        a.travel_date || '', a.created_at?.split('T')[0] || ''
+    if (type === 'full') {
+      // Combine applications + clients + invoices + hotels into one multi-section CSV
+      const [dash, invData, hotelData] = await Promise.all([
+        api('/admin/dashboard'),
+        api('/admin/invoices').catch(() => ({invoices: []})),
+        api('/admin/hotels/export/all').catch(() => ({hotels: []})),
       ]);
-      csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-    } else if (type === 'clients') {
-      const seen = new Set();
-      const clients = data.applications.filter(a => { if(seen.has(a.client_email))return false; seen.add(a.client_email); return true; });
-      csv = [['Name','Email','Phone','Applications'],...clients.map(c=>[
-        c.client_name,c.client_email,c.client_phone||'',
-        data.applications.filter(a=>a.client_email===c.client_email).length
-      ])].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-    } else if (type === 'comms') {
-      toast('Communication log export — use Hotel CRM export for hotels','error');
+
+      const seenClients = new Set();
+      const clients = dash.applications.filter(a => {
+        if (seenClients.has(a.client_email)) return false;
+        seenClients.add(a.client_email); return true;
+      });
+
+      let csv = 'APPLICATIONS\n';
+      csv += csvBlock(['App ID','Client','Email','Phone','Destination','Visa Type','Status','Progress %','Travel Date','Created'],
+        dash.applications.map(a => [a.app_id, a.client_name, a.client_email, a.client_phone||'', a.destination, a.visa_type, a.status, a.progress, a.travel_date||'', a.created_at?.split('T')[0]||'']));
+
+      csv += '\nCLIENTS\n';
+      csv += csvBlock(['Name','Email','Phone','Applications'],
+        clients.map(c => [c.client_name, c.client_email, c.client_phone||'', dash.applications.filter(a=>a.client_email===c.client_email).length]));
+
+      csv += '\nINVOICES\n';
+      csv += csvBlock(['Invoice #','Client','App ID','Total','Paid','Balance Due','Status','Due Date'],
+        invData.invoices.map(i => [i.invoice_no, i.client_name, i.app_id||'', i.total, i.amount_paid, i.balance_due, i.status, i.due_date||'']));
+
+      csv += '\nHOTEL BOOKINGS\n';
+      csv += csvBlock(['Client','Hotel','City','Check-in','Check-out','Status','Total Price'],
+        hotelData.hotels.map(h => [h.client_name, h.hotel_name, h.city, h.check_in, h.check_out, h.booking_status, h.total_price||'']));
+
+      downloadCSV(csv, 'mkov_full_crm');
+      toast('Full CRM exported');
       return;
     }
 
-    if (!csv) { toast('No data','error'); return; }
-    const blob = new Blob([csv], {type:'text/csv'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `mkov_${type}_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    toast('Downloaded');
+    if (type === 'applications') {
+      const data = await api('/admin/dashboard');
+      const csv = csvBlock(
+        ['App ID','Client','Email','Phone','Destination','Visa Type','Status','Progress %','Travel Date','Created'],
+        data.applications.map(a => [a.app_id, a.client_name, a.client_email, a.client_phone||'', a.destination, a.visa_type, a.status, a.progress, a.travel_date||'', a.created_at?.split('T')[0]||''])
+      );
+      downloadCSV(csv, 'mkov_applications');
+      toast('Applications exported');
+      return;
+    }
+
+    if (type === 'clients') {
+      const data = await api('/admin/dashboard');
+      const seen = new Set();
+      const clients = data.applications.filter(a => { if(seen.has(a.client_email))return false; seen.add(a.client_email); return true; });
+      const csv = csvBlock(
+        ['Name','Email','Phone','Applications'],
+        clients.map(c => [c.client_name, c.client_email, c.client_phone||'', data.applications.filter(a=>a.client_email===c.client_email).length])
+      );
+      downloadCSV(csv, 'mkov_clients');
+      toast('Client directory exported');
+      return;
+    }
+
+    if (type === 'comms') {
+      const data = await api('/admin/communication-log');
+      if (!data.logs.length) { toast('No communications logged yet','error'); return; }
+      const csv = csvBlock(
+        ['Date','Client','Email','App ID','Channel','Message Type','Status'],
+        data.logs.map(l => [l.created_at?.split('T')[0]||'', l.client_name||'', l.client_email||'', l.app_id||'', l.channel, l.message_type||'', l.sent_status])
+      );
+      downloadCSV(csv, 'mkov_communication_log');
+      toast('Communication log exported');
+      return;
+    }
+
+    toast('Unknown export type','error');
   } catch(e) { toast('Export failed','error'); }
+}
+
+function csvBlock(headers, rows) {
+  return [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n') + '\n';
+}
+
+function downloadCSV(csv, namePrefix) {
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${namePrefix}_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
 }
 
 // Init msg template
@@ -3375,7 +3292,7 @@ async function loadInvoices() {
     document.getElementById('inv-stat-collected').textContent = '₹' + s.total_collected.toLocaleString('en-IN');
     document.getElementById('inv-stat-due').textContent       = '₹' + s.total_due.toLocaleString('en-IN');
     document.getElementById('inv-stat-overdue').textContent   = s.overdue_count;
-    document.getElementById('nav-due-count').textContent      = s.unpaid_count;
+    document.getElementById('nav-due-count').textContent      = s.total_count;
 
     document.getElementById('invoices-table').innerHTML = allInvoices.map(inv => `
       <tr class="clickable" onclick="openInvoiceDetail(${inv.id})">
@@ -3624,7 +3541,7 @@ async function loadStaff() {
 }
 
 function roleStatusClass(role) {
-  return {superadmin:'approved', sales:'submitted', operations:'docs_received', accounts:'review', staff:'approved'}[role] || 'pending';
+  return {superadmin:'approved', sales:'submitted', visa_staff:'docs_received', staff:'approved'}[role] || 'pending';
 }
 
 function openStaffModal() {
@@ -3685,136 +3602,6 @@ async function deleteStaffConfirm(id, name) {
     loadStaff();
   } catch(e) { toast('Error removing staff','error'); }
 }
-
-let currentActiveTargetId = null; 
-let activeSocketConnection = null;
-
-function initializeCommunicationEngine() {
-    const userPayload = JSON.parse(atob(localStorage.getItem("token").split('.')[1]));
-    
-    // Check role authority settings dynamically
-    if (userPayload.role === 'superadmin') {
-        document.getElementById('superadmin-audit-section').style.display = 'block';
-        fetchSystemAuditLogs();
-        setInterval(fetchSystemAuditLogs, 10000); // Poll audit logs every 10 seconds
-    }
-
-    // Connect to WebSocket Server
-    const wsProtocol = window.location.protocol === "https:" ? "wss://" : "ws://";
-    const wsUrl = `${wsProtocol}${window.location.host}/ws/chat?token=${localStorage.getItem("token")}`;
-    
-    activeSocketConnection = new WebSocket(wsUrl);
-
-    activeSocketConnection.onmessage = function(event) {
-        const payload = JSON.parse(event.data);
-        
-        if (payload.type === "presence_update") {
-            renderPresenceIndicators(payload.online_users, userPayload.role);
-        } else if (payload.type === "message") {
-            appendIncomingChatBubble(payload);
-        }
-    };
-
-    activeSocketConnection.onclose = function() {
-        console.warn("Real-time network channel disconnected. Retrying...");
-        setTimeout(initializeCommunicationEngine, 5000);
-    };
-
-    loadChatHistory();
-}
-
-function renderPresenceIndicators(users, currentRole) {
-    const listContainer = document.getElementById("presence-list");
-    listContainer.innerHTML = "";
-    
-    users.forEach(user => {
-        const item = document.createElement("div");
-        item.style = "display:flex; align-items:center; gap:8px; padding:6px; background:#22263a; border-radius:4px;";
-        
-        // Green status dot for online indication
-        const dot = `<span style="height:10px; width:10px; background:#3ecf8e; border-radius:50%; display:inline-block;"></span>`;
-        item.innerHTML = `${dot} <div><strong>${user.name}</strong> <span style="font-size:11px; color:#9aa3c2;">(${user.role})</span></div>`;
-        
-        // Super admin can click an individual user profile box to launch private chat
-        if (currentRole === 'superadmin') {
-            item.style.cursor = "pointer";
-            item.onclick = () => selectChatChannel(user.id, `Private Chat with ${user.name}`);
-        }
-        listContainer.appendChild(item);
-    });
-}
-
-function selectChatChannel(targetId, windowHeaderTitle) {
-    currentActiveTargetId = targetId;
-    document.getElementById("chat-header").innerText = windowHeaderTitle;
-    loadChatHistory();
-}
-
-async function loadChatHistory() {
-    let url = "/admin/chat/history";
-    if (currentActiveTargetId) url += `?receiver_id=${currentActiveTargetId}`;
-    
-    const res = await fetch(url, { headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } });
-    const data = await res.json();
-    
-    const stream = document.getElementById("chat-message-stream");
-    stream.innerHTML = "";
-    data.messages.forEach(msg => appendIncomingChatBubble(msg));
-}
-
-function appendIncomingChatBubble(msg) {
-    const stream = document.getElementById("chat-message-stream");
-    const container = document.createElement("div");
-    container.style = `padding: 8px 12px; border-radius: 6px; margin-bottom: 5px; max-width: 70%; ${msg.receiver_id ? 'border: 1px dashed #f5b731;' : ''}`;
-    
-    if (msg.sender_id == JSON.parse(atob(localStorage.getItem("token").split('.')[1])).id) {
-        container.style.background = "#1e3a5f";
-        container.style.alignSelf = "flex-end";
-    } else {
-        container.style.background = "#2a2f45";
-        container.style.alignSelf = "flex-start";
-    }
-    
-    container.innerHTML = `<span style="font-size:11px; color:#00c6b8; display:block;">${msg.sender_name} (${msg.sender_role})</span> ${msg.message}`;
-    stream.appendChild(container);
-    stream.scrollTop = stream.scrollHeight;
-}
-
-function dispatchChatMessage() {
-    const field = document.getElementById("chat-input-field");
-    const text = field.value.trim();
-    if (!text || !activeSocketConnection) return;
-
-    activeSocketConnection.send(JSON.stringify({
-        text: text,
-        receiver_id: currentActiveTargetId
-    }));
-    field.value = "";
-}
-
-async function fetchSystemAuditLogs() {
-    const res = await fetch("/admin/audit-logs", { headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } });
-    if(res.status !== 200) return;
-    const data = await res.json();
-    
-    const tbody = document.getElementById("audit-logs-table-body");
-    tbody.innerHTML = "";
-    data.logs.forEach(log => {
-        const row = document.createElement("tr");
-        row.style.borderBottom = "1px solid #2e3350";
-        row.innerHTML = `
-            <td style="padding:8px;">${log.user_name}</td>
-            <td style="padding:8px;"><span style="color:#f5b731;">${log.user_role}</span></td>
-            <td style="padding:8px; font-weight:bold; color:#3ecf8e;">${log.action}</td>
-            <td style="padding:8px; color:#9aa3c2; font-size:13px;">${log.details || ''}</td>
-            <td style="padding:8px; font-size:12px;">${new Date(log.created_at).toLocaleString()}</td>
-        `;
-        tbody.appendChild(row);
-    });
-}
-
-// Make sure to call initializeCommunicationEngine() when your page finishes loading or when the user enters the chat tab!
-  
 </script>
 
 
@@ -3905,11 +3692,11 @@ async function fetchSystemAuditLogs() {
         <div class="form-row">
           <div class="form-group">
             <label>Check-in Date</label>
-            <input type="date" id="hotel-checkin" onchange="calcHotelTotal()">
+            <input type="date" id="hotel-checkin">
           </div>
           <div class="form-group">
             <label>Check-out Date</label>
-            <input type="date" id="hotel-checkout" onchange="calcHotelTotal()">
+            <input type="date" id="hotel-checkout">
           </div>
         </div>
         <div class="form-row">
@@ -4147,15 +3934,13 @@ async function fetchSystemAuditLogs() {
         <div class="form-group"><label>Full Name</label><input type="text" id="staff-name" placeholder="e.g. Anjali Verma"></div>
         <div class="form-group"><label>Email</label><input type="email" id="staff-email" placeholder="staff@uniglobemkov.in"></div>
         <div class="form-group" id="staff-password-group"><label>Password</label><input type="text" id="staff-password" placeholder="Set a password"></div>
-        <div class="form-group">
-          <div class="form-group"><label>Role</label>
-            <select id="staff-role">
-              <option value="sales">Sales — leads, clients, messaging</option>
-              <option value="operations">Operations — applications, documents, hotels</option>
-              <option value="accounts">Accounts — invoices, payments</option>
-              <option value="superadmin">Super Admin — full access</option>
-            </select>
-          </div>
+        <div class="form-group"><label>Role</label>
+          <select id="staff-role">
+            <option value="sales">Sales — leads, clients, messaging</option>
+            <option value="visa_staff">Visa Staff — applications, documents, hotels, invoices</option>
+            <option value="superadmin">Super Admin — full access</option>
+          </select>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
