@@ -97,9 +97,20 @@ for app_id, email, dest, vtype, tdate, status, progress in apps:
         VALUES (?,?,?)
     """, (c["id"], app_id, notif_msg.get(status,"")))
 
+# ── Demo Hotels ───────────────────────────────────────────────────────────────
+conn.execute("""
+    INSERT INTO hotel_records (client_id, app_id, hotel_name, city, country, check_in, check_out, booking_status, price_per_night, total_price, is_future)
+    VALUES (1, 'VIS-2026-001', 'Atlantis The Palm', 'Dubai', 'UAE', '2026-07-15', '2026-07-20', 'confirmed', 15000, 75000, 1)
+""")
+
+conn.execute("""
+    INSERT INTO hotel_records (client_id, app_id, hotel_name, city, country, check_in, check_out, booking_status, price_per_night, total_price, is_future)
+    VALUES (2, 'VIS-2026-002', 'Marriott Marquis', 'Bangkok', 'Thailand', '2026-07-20', '2026-07-25', 'tentative', 8000, 40000, 1)
+""")
+
 conn.commit()
 conn.close()
-print("✓ Demo data seeded successfully")
+print("✓ Demo data (including Hotel records) seeded successfully")
 print("  Admin login:  admin@uniglobemkov.in / admin123")
 print("  Client login: rahul.sharma@email.com / rahul2024")
 print("  Client login: priya.mehta@email.com  / priya2024")
