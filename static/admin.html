@@ -4147,12 +4147,12 @@ async function fetchSystemAuditLogs() {
         <div class="form-group"><label>Full Name</label><input type="text" id="staff-name" placeholder="e.g. Anjali Verma"></div>
         <div class="form-group"><label>Email</label><input type="email" id="staff-email" placeholder="staff@uniglobemkov.in"></div>
         <div class="form-group" id="staff-password-group"><label>Password</label><input type="text" id="staff-password" placeholder="Set a password"></div>
-        <div class="form-group"><label>Role</label>
-          <select id="staff-role">
-            <option value="sales">Sales — leads, clients, messaging</option>
-            <option value="operations">Operations — applications, documents, hotels</option>
-            <option value="accounts">Accounts — invoices, payments</option>
-            <option value="superadmin">Super Admin — full access</option>
+        <div class="form-group">
+          <label>Role Authority Level</label>
+          <select id="staff-role" style="background: #0f1117; color: white; border: 1px solid #2e3350; padding: 10px; border-radius: 4px; width: 100%;">
+            <option value="sales">Sales — leads, follow-ups, client operations</option>
+            <option value="visa">Visa — processing, verification, hotel/itinerary logs</option>
+            <option value="superadmin">Super Admin — root permissions and system audit management</option>
           </select>
         </div>
       </div>
