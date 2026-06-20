@@ -237,3 +237,43 @@ def send_reminder(client_name: str, client_phone: str, client_email: str, app_id
         if "sms" in channels: _send_sms(client_phone, sms_message, "docs_reminder")
         if "email" in channels: _send_email(client_email, f"Documents Required — {app_id}", email_text, email_html, "docs_reminder")
     _notify_async(_run)
+
+def send_calendar_reminder(to_email: str, title: str, event_type: str, start_at: str, location: str = "", notes: str = ""):
+    """
+    Internal staff reminder for a calendar event (e.g. visa expiry deadline,
+    embassy appointment). Email only — this is a staff-facing reminder, not
+    a client-facing notification.
+    """
+    type_labels = {
+        "embassy_appointment": "Embassy Appointment",
+        "travel_date":         "Travel Date",
+        "followup":            "Follow-up",
+        "deadline":            "Deadline",
+        "other":               "Event",
+    }
+    label = type_labels.get(event_type, "Event")
+
+    email_text = (
+        f"Reminder: {title}\n\n"
+        f"Type: {label}\n"
+        f"When: {start_at}\n"
+        + (f"Where: {location}\n" if location else "")
+        + (f"Notes: {notes}\n" if notes else "")
+        + "\nThis is an automated reminder from the MKOV Visa CRM calendar."
+    )
+    email_html = f'''<div style="font-family:Arial;max-width:600px;margin:auto;padding:20px">
+<div style="background:#0d3055;color:white;padding:24px;border-radius:8px 8px 0 0">
+<h1 style="margin:0;font-size:20px">🔔 Calendar Reminder</h1>
+</div>
+<div style="background:#f9f9f9;padding:24px;border:1px solid #e0e0e0">
+<h2 style="margin-top:0">{title}</h2>
+<p><strong>Type:</strong> {label}</p>
+<p><strong>When:</strong> {start_at}</p>
+{f"<p><strong>Where:</strong> {location}</p>" if location else ""}
+{f"<p><strong>Notes:</strong> {notes}</p>" if notes else ""}
+<p style="color:#888;font-size:12px;margin-top:24px">Automated reminder from MKOV Visa CRM.</p>
+</div></div>'''
+
+    def _run():
+        _send_email(to_email, f"Reminder: {title}", email_text, email_html, "calendar_reminder")
+    _notify_async(_run)
