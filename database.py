@@ -115,7 +115,10 @@ def init_db():
         )
     """)
 
-    # ── NEW: Client pricing/discounts ──────────────────────────────────────
+    # ── NEW: Client pricing / service charges ────────────────────────────────
+    # Note: table/column names use "discount" for DB compatibility, but the
+    # business logic in main.py treats these values as an ADDITIVE service
+    # charge on top of the base price, not a price reduction.
     c.execute("""
         CREATE TABLE IF NOT EXISTS client_discounts (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -231,20 +234,24 @@ def init_db():
     # ── Calendar events (visa appointments, travel dates, reminders) ───────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS calendar_events (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            title         TEXT NOT NULL,
-            event_type    TEXT DEFAULT 'other',    -- embassy_appointment|travel_date|followup|deadline|other
-            start_at      DATETIME NOT NULL,
-            end_at        DATETIME,
-            all_day       INTEGER DEFAULT 0,
-            client_id     INTEGER REFERENCES clients(id),
-            app_id        TEXT,
-            lead_id       INTEGER REFERENCES leads(id),
-            location      TEXT,
-            notes         TEXT,
-            color         TEXT DEFAULT '#00c6b8',
-            created_by    TEXT,
-            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            title           TEXT NOT NULL,
+            event_type      TEXT DEFAULT 'other',    -- embassy_appointment|travel_date|followup|deadline|other
+            start_at        DATETIME NOT NULL,
+            end_at          DATETIME,
+            all_day         INTEGER DEFAULT 0,
+            client_id       INTEGER REFERENCES clients(id),
+            app_id          TEXT,
+            lead_id         INTEGER REFERENCES leads(id),
+            location        TEXT,
+            notes           TEXT,
+            color           TEXT DEFAULT '#00a99c',
+            reminder_minutes_before INTEGER,         -- e.g. 1440 = 1 day before, NULL = no reminder
+            reminder_email  TEXT,                    -- who gets the email reminder
+            reminder_sent   INTEGER DEFAULT 0,        -- 0=not sent, 1=email sent
+            popup_seen_by   TEXT DEFAULT '[]',        -- JSON array of staff names who dismissed the popup
+            created_by      TEXT,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -282,6 +289,18 @@ def init_db():
             paid_at       TEXT NOT NULL,
             notes         TEXT,
             recorded_by   TEXT,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # ── Team chat (global, all staff see the same channel) ──────────────────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS team_chat_messages (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id     INTEGER REFERENCES admin_users(id),
+            sender_name   TEXT NOT NULL,
+            sender_role   TEXT,
+            message       TEXT NOT NULL,
             created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
