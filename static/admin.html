@@ -8,14 +8,14 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--surface3:#2a2f45;
-  --border:#2e3350;--border2:#3d4466;
-  --navy:#1e3a5f;--teal:#00c6b8;--teal-dim:#00857a;
-  --gold:#f5b731;--red:#e05454;--green:#3ecf8e;--blue:#4f8ef7;
-  --text:#e8eaf0;--text2:#9aa3c2;--text3:#5c6485;
+  --bg:#ffffff;--surface:#ffffff;--surface2:#f3f4f8;--surface3:#e9ebf2;
+  --border:#e0e2ec;--border2:#c7cad9;
+  --navy:#1e3a5f;--teal:#00a99c;--teal-dim:#00857a;
+  --gold:#b8860b;--red:#d6403f;--green:#1f9d63;--blue:#2f6fdb;
+  --text:#1a1d27;--text2:#4b5169;--text3:#7b8099;
   --font:'Inter',sans-serif;--mono:'JetBrains Mono',monospace;
   --r:8px;--r2:12px;--r3:16px;
-  --shadow:0 4px 24px rgba(0,0,0,0.4);
+  --shadow:0 4px 24px rgba(15,17,23,0.08);
 }
 html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5}
 
@@ -286,6 +286,10 @@ tbody tr:hover{background:var(--surface2)}
       <button class="nav-item" data-page="calendar" onclick="nav('calendar')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Calendar
+      </button>
+      <button class="nav-item" data-page="team-chat" onclick="nav('team-chat')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        Team Chat
       </button>
       <button class="nav-item" data-page="applications" onclick="nav('applications')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
@@ -736,6 +740,22 @@ tbody tr:hover{background:var(--surface2)}
         </div>
       </div>
 
+      <!-- TEAM CHAT -->
+      <div class="view" id="view-team-chat">
+        <div class="page-header">
+          <div><h2>Team Chat</h2><p>One channel for all staff — sales, visa staff, and admins</p></div>
+        </div>
+        <div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 220px);padding:0;overflow:hidden">
+          <div id="team-chat-messages" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:10px"></div>
+          <div style="border-top:1px solid var(--border);padding:14px;display:flex;gap:8px">
+            <input type="text" id="team-chat-input" placeholder="Message the team..."
+              style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;color:var(--text);font-size:13px;outline:none"
+              onkeydown="if(event.key==='Enter'){sendTeamChatMessage()}">
+            <button class="btn btn-primary" onclick="sendTeamChatMessage()">Send</button>
+          </div>
+        </div>
+      </div>
+
       <!-- INVOICES & PAYMENTS -->
       <div class="view" id="view-invoices">
         <div class="page-header">
@@ -1094,6 +1114,20 @@ tbody tr:hover{background:var(--surface2)}
   </div>
 </div>
 
+<!-- Reminder Popup -->
+<div class="modal-overlay" id="reminder-popup-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <span class="modal-title">🔔 Reminder</span>
+      <button class="modal-close" onclick="dismissCurrentPopup()">×</button>
+    </div>
+    <div class="modal-body" id="reminder-popup-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="dismissCurrentPopup()">Got it</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast"></div>
 
@@ -1119,6 +1153,7 @@ async function doLogin() {
     TOKEN = data.token;
     CURRENT_ROLE = data.role;
     CURRENT_STAFF_ID = data.id;
+    CURRENT_STAFF_NAME = data.name;
     document.getElementById('user-name-display').textContent = data.name;
     document.getElementById('user-avatar').textContent = data.name[0].toUpperCase();
     document.querySelector('.user-role').textContent = roleLabel(data.role);
@@ -1129,6 +1164,8 @@ async function doLogin() {
     loadChecklistsForSelect();
     renderPackages();
     renderChecklists();
+    checkDueReminders();
+    startTeamChatPolling();
   } catch(e) {
     document.getElementById('login-error').style.display = 'block';
     document.getElementById('login-error').textContent = 'Invalid email or password';
@@ -1137,6 +1174,7 @@ async function doLogin() {
 
 let CURRENT_ROLE = null;
 let CURRENT_STAFF_ID = null;
+let CURRENT_STAFF_NAME = null;
 
 function roleLabel(role) {
   return {superadmin:'Super Admin', staff:'Staff', sales:'Sales', visa_staff:'Visa Staff'}[role] || role;
@@ -1155,6 +1193,7 @@ const ROLE_PAGE_ACCESS = {
   hotels: ['visa_staff'],
   leads: ['sales'],
   calendar: null,              // everyone
+  'team-chat': null,           // everyone
   invoices: ['visa_staff'],
   'staff-management': [],      // superadmin only
   export: ['visa_staff'],
@@ -1188,7 +1227,8 @@ function api(path, opts={}) {
 const PAGE_TITLES = {
   'client-profile':'Client Profile', hotels:'Hotel CRM', dashboard:'Dashboard', applications:'Applications', clients:'Clients',
   vfs:'VFS Checklists', packages:'Packages', messages:'Send Message', export:'Export CRM',
-  leads:'Leads & Follow-ups', calendar:'Calendar', invoices:'Invoices & Payments', 'staff-management':'Staff & Roles'
+  leads:'Leads & Follow-ups', calendar:'Calendar', invoices:'Invoices & Payments', 'staff-management':'Staff & Roles',
+  'team-chat':'Team Chat'
 };
 
 function nav(page) {
@@ -1212,6 +1252,7 @@ function nav(page) {
   else if (page === 'calendar')         loadCalendar();
   else if (page === 'invoices')         loadInvoices();
   else if (page === 'staff-management') loadStaff();
+  else if (page === 'team-chat')        { loadTeamChat(); scrollChatToBottom(); }
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -1878,21 +1919,21 @@ async function loadClientProfile(clientId) {
         }
       </div>
 
-      <!-- Fee Structure -->
+      <!-- Service Charge -->
       <div class="card" style="margin-bottom:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-          <div class="card-title" style="margin:0">Fee Structure</div>
-          <button class="btn btn-primary btn-sm" onclick="openFeeModal(${c.id},'${c.name}')">+ Set Fee</button>
+          <div class="card-title" style="margin:0">Service Charge</div>
+          <button class="btn btn-primary btn-sm" onclick="openFeeModal(${c.id},'${c.name}')">+ Set Service Charge</button>
         </div>
         ${fees.length ? `
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Label / Notes</th><th>Discount</th><th>Set By</th><th>Date</th><th></th></tr></thead>
+              <thead><tr><th>Label / Notes</th><th>Service Charge</th><th>Set By</th><th>Date</th><th></th></tr></thead>
               <tbody>
                 ${fees.map(f => `
                   <tr>
                     <td style="font-size:12px">${f.reason || '—'}</td>
-                    <td><span style="color:var(--green);font-weight:600">${f.discount_type} ${f.discount_value}</span></td>
+                    <td><span style="color:var(--green);font-weight:600">${f.discount_type === 'percentage' ? '+' + f.discount_value + '%' : f.discount_type === 'fixed' ? '+₹' + f.discount_value : 'No extra charge'}</span></td>
                     <td style="font-size:12px;color:var(--text3)">${f.created_by}</td>
                     <td style="font-size:11px;color:var(--text3)">${f.created_at?.split('T')[0]}</td>
                     <td><button class="btn btn-danger btn-sm" onclick="deleteFee(${f.id},${c.id})">Remove</button></td>
@@ -2080,7 +2121,7 @@ function openFeeModal(clientId, clientName) {
   modal.innerHTML = `
     <div class="modal" style="max-width:460px">
       <div class="modal-header">
-        <span class="modal-title">Set Fee — ${clientName}</span>
+        <span class="modal-title">Set Service Charge — ${clientName}</span>
         <button class="modal-close" onclick="document.getElementById('fee-modal').remove()">×</button>
       </div>
       <div class="modal-body">
@@ -2094,15 +2135,15 @@ function openFeeModal(clientId, clientName) {
             <input type="number" id="fee-base" placeholder="5000" oninput="recalcFee()">
           </div>
           <div class="form-group">
-            <label>Discount Type</label>
+            <label>Service Charge Type</label>
             <select id="fee-type" onchange="recalcFee()">
-              <option value="none">No Discount</option>
+              <option value="none">No Extra Charge</option>
               <option value="percentage">Percentage (%)</option>
               <option value="fixed">Fixed Amount (₹)</option>
             </select>
           </div>
           <div class="form-group">
-            <label>Discount Value</label>
+            <label>Service Charge Value</label>
             <input type="number" id="fee-discount" placeholder="0" oninput="recalcFee()">
           </div>
           <div id="fee-calc" style="background:var(--surface2);border-radius:var(--r);padding:12px;font-size:13px;display:none">
@@ -2110,7 +2151,7 @@ function openFeeModal(clientId, clientName) {
               <span style="color:var(--text3)">Base Price</span><span id="fc-base">—</span>
             </div>
             <div style="display:flex;justify-content:space-between;margin-top:4px">
-              <span style="color:var(--text3)">Discount</span><span id="fc-disc" style="color:var(--red)">—</span>
+              <span style="color:var(--text3)">Service Charge</span><span id="fc-disc" style="color:var(--green)">—</span>
             </div>
             <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-weight:700">
               <span>Final Price</span><span id="fc-final" style="color:var(--green)">—</span>
@@ -2136,23 +2177,23 @@ function openFeeModal(clientId, clientName) {
 }
 
 function recalcFee() {
-  const base     = parseFloat(document.getElementById('fee-base').value) || 0;
-  const type     = document.getElementById('fee-type').value;
-  const discount = parseFloat(document.getElementById('fee-discount').value) || 0;
-  const calc     = document.getElementById('fee-calc');
+  const base    = parseFloat(document.getElementById('fee-base').value) || 0;
+  const type    = document.getElementById('fee-type').value;
+  const charge  = parseFloat(document.getElementById('fee-discount').value) || 0;
+  const calc    = document.getElementById('fee-calc');
   if (!base) { calc.style.display = 'none'; return; }
   calc.style.display = 'block';
   let final = base;
-  let discStr = '—';
-  if (type === 'percentage' && discount) {
-    final = base * (1 - discount/100);
-    discStr = `-${discount}% (₹${(base - final).toFixed(0)})`;
-  } else if (type === 'fixed' && discount) {
-    final = Math.max(0, base - discount);
-    discStr = `-₹${discount}`;
+  let chargeStr = '—';
+  if (type === 'percentage' && charge) {
+    final = base * (1 + charge/100);
+    chargeStr = `+${charge}% (₹${(final - base).toFixed(0)})`;
+  } else if (type === 'fixed' && charge) {
+    final = base + charge;
+    chargeStr = `+₹${charge}`;
   }
   document.getElementById('fc-base').textContent  = `₹${base.toLocaleString('en-IN')}`;
-  document.getElementById('fc-disc').textContent  = discStr;
+  document.getElementById('fc-disc').textContent  = chargeStr;
   document.getElementById('fc-final').textContent = `₹${final.toLocaleString('en-IN')}`;
 }
 
@@ -2173,7 +2214,7 @@ async function saveFee(clientId) {
       })
     });
     document.getElementById('fee-modal').remove();
-    toast(`Fee set — Final: ₹${result.final_price?.toFixed(0)}`);
+    toast(`Service charge set — Final: ₹${result.final_price?.toFixed(0)}`);
     loadClientProfile(clientId);
   } catch(e) { toast('Error saving fee','error'); }
 }
@@ -2952,6 +2993,80 @@ function downloadPassport(b64, filename) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// TEAM CHAT — global channel, polled every 8 seconds while logged in
+// ══════════════════════════════════════════════════════════════════════════
+let teamChatLastId = 0;
+let teamChatPollHandle = null;
+
+async function loadTeamChat() {
+  try {
+    const data = await api('/admin/team-chat');
+    teamChatLastId = data.messages.length ? data.messages[data.messages.length - 1].id : 0;
+    renderChatMessages(data.messages, true);
+  } catch(e) { console.error(e); }
+}
+
+function renderChatMessages(messages, replace) {
+  const container = document.getElementById('team-chat-messages');
+  if (!container) return;
+  const html = messages.map(m => {
+    const mine = m.sender_name === CURRENT_STAFF_NAME;
+    return `
+      <div style="display:flex;flex-direction:column;align-items:${mine ? 'flex-end' : 'flex-start'}">
+        <div style="background:${mine ? 'var(--teal)' : 'var(--surface2)'};border:1px solid ${mine ? 'transparent' : 'var(--border)'};border-radius:${mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};padding:9px 13px;max-width:70%">
+          ${!mine ? `<div style="font-size:11px;font-weight:600;color:var(--teal);margin-bottom:3px">${m.sender_name} <span style="color:var(--text3);font-weight:400">· ${roleLabel(m.sender_role || '')}</span></div>` : ''}
+          <div style="font-size:13px;color:${mine ? '#000' : 'var(--text)'};white-space:pre-wrap;word-break:break-word">${escapeHtml(m.message)}</div>
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px;padding:0 4px">${formatDateTime(m.created_at)}</div>
+      </div>
+    `;
+  }).join('');
+  if (replace) {
+    container.innerHTML = html || '<p style="text-align:center;color:var(--text3);font-size:13px;margin-top:40px">No messages yet — say hello to the team.</p>';
+  } else {
+    container.insertAdjacentHTML('beforeend', html);
+  }
+  scrollChatToBottom();
+}
+
+function scrollChatToBottom() {
+  const container = document.getElementById('team-chat-messages');
+  if (container) container.scrollTop = container.scrollHeight;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function sendTeamChatMessage() {
+  const input = document.getElementById('team-chat-input');
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = '';
+  try {
+    await api('/admin/team-chat', {method:'POST', body: JSON.stringify({message})});
+    pollTeamChat();
+  } catch(e) { toast('Message failed to send','error'); }
+}
+
+async function pollTeamChat() {
+  try {
+    const data = await api(`/admin/team-chat?since_id=${teamChatLastId}`);
+    if (data.messages.length) {
+      teamChatLastId = data.messages[data.messages.length - 1].id;
+      renderChatMessages(data.messages, false);
+    }
+  } catch(e) {}
+}
+
+function startTeamChatPolling() {
+  if (teamChatPollHandle) clearInterval(teamChatPollHandle);
+  teamChatPollHandle = setInterval(pollTeamChat, 8000);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // LEADS & FOLLOW-UPS
 // ══════════════════════════════════════════════════════════════════════════
 let allLeads = [];
@@ -3233,6 +3348,8 @@ function openCalendarModal(prefillDate) {
   document.getElementById('cal-location').value = '';
   document.getElementById('cal-notes').value = '';
   document.getElementById('cal-end').value = '';
+  document.getElementById('cal-reminder').value = '';
+  document.getElementById('cal-reminder-email').value = '';
   if (prefillDate) {
     document.getElementById('cal-start').value = prefillDate + 'T10:00';
   } else {
@@ -3245,6 +3362,7 @@ async function saveCalendarEvent() {
   const title = document.getElementById('cal-title').value.trim();
   const start = document.getElementById('cal-start').value;
   if (!title || !start) return toast('Title and start date are required','error');
+  const reminderVal = document.getElementById('cal-reminder').value;
   const body = {
     title,
     event_type: document.getElementById('cal-type').value,
@@ -3254,11 +3372,13 @@ async function saveCalendarEvent() {
     location: document.getElementById('cal-location').value.trim(),
     notes: document.getElementById('cal-notes').value.trim(),
     color: document.getElementById('cal-color').value,
+    reminder_minutes_before: reminderVal ? parseInt(reminderVal) : null,
+    reminder_email: document.getElementById('cal-reminder-email').value.trim() || null,
   };
   try {
     await api('/admin/calendar', {method:'POST', body: JSON.stringify(body)});
     closeModal('calendar-modal');
-    toast('Event added');
+    toast(reminderVal ? 'Event added with reminder' : 'Event added');
     renderCalendarGrid();
     loadCalendarUpcoming();
   } catch(e) { toast('Error saving event','error'); }
@@ -3273,6 +3393,48 @@ function viewCalendarEvent(eventId) {
       renderCalendarGrid();
       loadCalendarUpcoming();
     });
+  }
+}
+
+// ── Reminder popups (shown on login / page visit) ──────────────────────────────
+let reminderPopupQueue = [];
+
+async function checkDueReminders() {
+  try {
+    const data = await api('/admin/calendar/due-reminders');
+    reminderPopupQueue = data.popups || [];
+    showNextReminderPopup();
+  } catch(e) {}
+}
+
+function showNextReminderPopup() {
+  if (!reminderPopupQueue.length) return;
+  const ev = reminderPopupQueue[0];
+  const typeLabels = {embassy_appointment:'Embassy Appointment', travel_date:'Travel Date', followup:'Follow-up', deadline:'Deadline', other:'Event'};
+  document.getElementById('reminder-popup-body').innerHTML = `
+    <div style="margin-bottom:10px"><span class="status" style="background:${ev.color}22;color:${ev.color}">${typeLabels[ev.event_type] || 'Event'}</span></div>
+    <h3 style="font-size:16px;margin-bottom:8px">${ev.title}</h3>
+    <div style="font-size:13px;color:var(--text2);display:grid;gap:6px">
+      <div>📅 ${formatDateTime(ev.start_at)}</div>
+      ${ev.location ? `<div>📍 ${ev.location}</div>` : ''}
+      ${ev.notes ? `<div>📝 ${ev.notes}</div>` : ''}
+    </div>
+  `;
+  openModal('reminder-popup-modal');
+}
+
+async function dismissCurrentPopup() {
+  closeModal('reminder-popup-modal');
+  const ev = reminderPopupQueue.shift();
+  if (ev) {
+    try {
+      await api(`/admin/calendar/${ev.id}/dismiss-popup`, {
+        method: 'POST', body: JSON.stringify({staff_name: CURRENT_STAFF_NAME})
+      });
+    } catch(e) {}
+  }
+  if (reminderPopupQueue.length) {
+    setTimeout(showNextReminderPopup, 300);
   }
 }
 
@@ -3362,18 +3524,18 @@ function getInvoiceLineItems() {
 }
 
 function recalcInvoiceTotal() {
-  const items     = getInvoiceLineItems();
-  const subtotal  = items.reduce((sum, i) => sum + i.qty * i.unit_price, 0);
-  const discount  = parseFloat(document.getElementById('inv-discount')?.value) || 0;
-  const taxPct    = parseFloat(document.getElementById('inv-tax')?.value) || 0;
-  const afterDisc = Math.max(0, subtotal - discount);
-  const taxAmt    = afterDisc * (taxPct / 100);
-  const total     = afterDisc + taxAmt;
+  const items      = getInvoiceLineItems();
+  const subtotal   = items.reduce((sum, i) => sum + i.qty * i.unit_price, 0);
+  const svcCharge  = parseFloat(document.getElementById('inv-discount')?.value) || 0;
+  const taxPct     = parseFloat(document.getElementById('inv-tax')?.value) || 0;
+  const afterCharge = subtotal + svcCharge;
+  const taxAmt     = afterCharge * (taxPct / 100);
+  const total      = afterCharge + taxAmt;
   const display = document.getElementById('invoice-total-display');
   if (display) {
     display.innerHTML = `
       <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
-      <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Discount</span><span style="color:var(--red)">-₹${discount.toFixed(2)}</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Service Charge</span><span style="color:var(--green)">+₹${svcCharge.toFixed(2)}</span></div>
       <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Tax (${taxPct}%)</span><span>₹${taxAmt.toFixed(2)}</span></div>
       <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-weight:700"><span>Total</span><span style="color:var(--green)">₹${total.toFixed(2)}</span></div>`;
   }
@@ -3425,7 +3587,7 @@ async function openInvoiceDetail(invoiceId) {
       </div>
       <div style="background:var(--surface2);border-radius:var(--r);padding:12px;font-size:13px;margin-bottom:16px">
         <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Subtotal</span><span>₹${inv.subtotal}</span></div>
-        <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Discount</span><span>-₹${inv.discount}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Service Charge</span><span style="color:var(--green)">+₹${inv.discount}</span></div>
         <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Tax</span><span>₹${inv.tax_amount}</span></div>
         <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-weight:700"><span>Total</span><span>₹${inv.total}</span></div>
         <div style="display:flex;justify-content:space-between;margin-top:4px;color:var(--green)"><span>Paid</span><span>₹${inv.amount_paid}</span></div>
@@ -3497,7 +3659,7 @@ async function exportInvoicesCRM() {
     const data = await api('/admin/invoices/export');
     const invs = data.invoices;
     if (!invs.length) return toast('No invoices to export','error');
-    const headers = ['Invoice #','Client','Email','Phone','App ID','Subtotal','Discount','Tax','Total','Paid','Balance Due','Status','Due Date'];
+    const headers = ['Invoice #','Client','Email','Phone','App ID','Subtotal','Service Charge','Tax','Total','Paid','Balance Due','Status','Due Date'];
     const rows = invs.map(i => [
       i.invoice_no, i.client_name, i.client_email, i.client_phone||'', i.app_id||'',
       i.subtotal, i.discount, i.tax_amount, i.total, i.amount_paid, i.balance_due, i.status, i.due_date||''
@@ -3834,6 +3996,19 @@ async function deleteStaffConfirm(id, name) {
         <div class="form-group"><label>Application ID (optional)</label><input type="text" id="cal-app-id" placeholder="VIS-2026-001"></div>
         <div class="form-group"><label>Location</label><input type="text" id="cal-location" placeholder="e.g. UAE Embassy, Delhi"></div>
         <div class="form-group"><label>Notes</label><textarea id="cal-notes" placeholder="What to bring, who's attending..."></textarea></div>
+        <div class="form-row">
+          <div class="form-group"><label>Remind Me</label>
+            <select id="cal-reminder">
+              <option value="">No reminder</option>
+              <option value="15">15 minutes before</option>
+              <option value="60">1 hour before</option>
+              <option value="1440">1 day before</option>
+              <option value="2880">2 days before</option>
+              <option value="10080">1 week before</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Reminder Email</label><input type="email" id="cal-reminder-email" placeholder="Defaults to your own email"></div>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -3864,7 +4039,7 @@ async function deleteStaffConfirm(id, name) {
           <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addInvoiceLineItem()">+ Add Line Item</button>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>Discount (₹)</label><input type="number" id="inv-discount" value="0" oninput="recalcInvoiceTotal()"></div>
+          <div class="form-group"><label>Service Charge (₹)</label><input type="number" id="inv-discount" value="0" oninput="recalcInvoiceTotal()"></div>
           <div class="form-group"><label>Tax (%)</label><input type="number" id="inv-tax" value="0" oninput="recalcInvoiceTotal()"></div>
         </div>
         <div id="invoice-total-display" style="background:var(--surface2);border-radius:var(--r);padding:12px;font-size:13px"></div>
