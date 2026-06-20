@@ -16,7 +16,7 @@ from typing import Optional
 
 from database import init_db, get_db
 from auth import require_admin, require_client, require_superadmin, require_roles, admin_login, client_login, hash_password
-from notifier import send_checklist, send_status_update, send_reminder
+from notifier import send_checklist, send_status_update, send_reminder, send_calendar_reminder
 
 init_db()
 
@@ -138,7 +138,9 @@ class NewCalendarEventRequest(BaseModel):
     lead_id:    Optional[int] = None
     location:   Optional[str] = ""
     notes:      Optional[str] = ""
-    color:      Optional[str] = "#00c6b8"
+    color:      Optional[str] = "#00a99c"
+    reminder_minutes_before: Optional[int] = None   # e.g. 1440 = remind 1 day before
+    reminder_email:          Optional[str] = None   # defaults to creator's own email if not set
 
 class UpdateCalendarEventRequest(BaseModel):
     title:      Optional[str] = None
@@ -149,6 +151,14 @@ class UpdateCalendarEventRequest(BaseModel):
     location:   Optional[str] = None
     notes:      Optional[str] = None
     color:      Optional[str] = None
+    reminder_minutes_before: Optional[int] = None
+    reminder_email:          Optional[str] = None
+
+class DismissPopupRequest(BaseModel):
+    staff_name: str
+
+class TeamChatMessageRequest(BaseModel):
+    message: str
 
 # --- Invoice & payment schemas ───────────────────────────────────────────────
 class InvoiceLineItem(BaseModel):
@@ -894,10 +904,13 @@ def admin_update_application(app_id: str, data: UpdateApplicationRequest, admin=
 @app.post("/admin/client-fee")
 def admin_set_client_fee(data: FeeStructureRequest, admin=Depends(require_roles("visa_staff"))):
     """
-    Set custom fee/discount for a specific client.
-    discount_type: 'percentage' = e.g. 10% off
-                   'fixed'      = e.g. INR 500 off
-                   'none'       = full price
+    Set a custom service charge for a specific client.
+    discount_type: 'percentage' = e.g. 10% added on top of base price
+                   'fixed'      = e.g. INR 500 added on top of base price
+                   'none'       = base price only, no extra charge
+    Note: field names (discount_type/discount_value/client_discounts table) are
+    kept for DB compatibility, but the value is now ADDED to the base price as
+    a service charge, not subtracted as a discount.
     """
     conn = get_db()
     client = conn.execute("SELECT id, name FROM clients WHERE id=?", (data.client_id,)).fetchone()
@@ -905,11 +918,11 @@ def admin_set_client_fee(data: FeeStructureRequest, admin=Depends(require_roles(
         conn.close()
         raise HTTPException(404, "Client not found")
 
-    # Calculate final price
+    # Calculate final price — service charge is ADDED to base price
     if data.discount_type == "percentage":
-        final = data.base_price * (1 - data.discount_value / 100)
+        final = data.base_price * (1 + data.discount_value / 100)
     elif data.discount_type == "fixed":
-        final = max(0, data.base_price - data.discount_value)
+        final = data.base_price + data.discount_value
     else:
         final = data.base_price
 
@@ -930,7 +943,7 @@ def admin_set_client_fee(data: FeeStructureRequest, admin=Depends(require_roles(
     if data.app_id:
         conn.execute(
             "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
-            (data.app_id, f"admin:{admin['name']}", "Fee updated",
+            (data.app_id, f"admin:{admin['name']}", "Service charge updated",
              f"{data.label}: ₹{data.base_price} → ₹{final:.0f} ({data.discount_type}: {data.discount_value})")
         )
 
@@ -1573,14 +1586,22 @@ def upcoming_calendar_events(admin=Depends(require_admin)):
 @app.post("/admin/calendar")
 def create_calendar_event(data: NewCalendarEventRequest, admin=Depends(require_admin)):
     conn = get_db()
+
+    reminder_email = data.reminder_email
+    if data.reminder_minutes_before is not None and not reminder_email:
+        # Default to the creating staff member's own email
+        row = conn.execute("SELECT email FROM admin_users WHERE name=?", (admin["name"],)).fetchone()
+        reminder_email = row["email"] if row else None
+
     conn.execute("""
         INSERT INTO calendar_events
-        (title, event_type, start_at, end_at, all_day, client_id, app_id, lead_id, location, notes, color, created_by)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        (title, event_type, start_at, end_at, all_day, client_id, app_id, lead_id, location, notes, color,
+         reminder_minutes_before, reminder_email, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         data.title, data.event_type, data.start_at, data.end_at, data.all_day,
         data.client_id, data.app_id, data.lead_id, data.location, data.notes,
-        data.color, admin["name"]
+        data.color, data.reminder_minutes_before, reminder_email, admin["name"]
     ))
     if data.app_id:
         conn.execute(
@@ -1622,15 +1643,130 @@ def delete_calendar_event(event_id: int, admin=Depends(require_admin)):
     return {"status": "deleted"}
 
 
+@app.get("/admin/calendar/due-reminders")
+def check_due_reminders(admin=Depends(require_admin)):
+    """
+    Called whenever staff load the app. Finds events whose reminder time
+    has arrived but the email hasn't been sent yet, fires the email, marks
+    it sent, and returns events that should pop up in-browser for THIS
+    staff member (based on whether they've already dismissed it).
+    """
+    conn = get_db()
+
+    # 1) Send any due, unsent email reminders
+    due_for_email = conn.execute("""
+        SELECT * FROM calendar_events
+        WHERE reminder_minutes_before IS NOT NULL
+          AND reminder_sent = 0
+          AND reminder_email IS NOT NULL
+          AND datetime(start_at, '-' || reminder_minutes_before || ' minutes') <= datetime('now')
+    """).fetchall()
+
+    for ev in due_for_email:
+        send_calendar_reminder(
+            ev["reminder_email"], ev["title"], ev["event_type"],
+            ev["start_at"], ev["location"] or "", ev["notes"] or ""
+        )
+        conn.execute("UPDATE calendar_events SET reminder_sent=1 WHERE id=?", (ev["id"],))
+
+    if due_for_email:
+        conn.commit()
+
+    # 2) Find events that should pop up for THIS staff member:
+    #    reminder window has started, event hasn't happened yet, and this
+    #    staff member hasn't dismissed the popup yet.
+    staff_name = admin["name"]
+    candidates = conn.execute("""
+        SELECT * FROM calendar_events
+        WHERE reminder_minutes_before IS NOT NULL
+          AND start_at >= datetime('now')
+          AND datetime(start_at, '-' || reminder_minutes_before || ' minutes') <= datetime('now')
+    """).fetchall()
+
+    popups = []
+    for ev in candidates:
+        seen = json.loads(ev["popup_seen_by"] or "[]")
+        if staff_name not in seen:
+            popups.append(dict(ev))
+
+    conn.close()
+    return {"popups": popups, "emails_sent": len(due_for_email)}
+
+
+@app.post("/admin/calendar/{event_id}/dismiss-popup")
+def dismiss_calendar_popup(event_id: int, data: DismissPopupRequest, admin=Depends(require_admin)):
+    """Mark this popup as seen by this specific staff member (not globally)."""
+    conn = get_db()
+    ev = conn.execute("SELECT popup_seen_by FROM calendar_events WHERE id=?", (event_id,)).fetchone()
+    if not ev:
+        conn.close()
+        raise HTTPException(404, "Event not found")
+    seen = json.loads(ev["popup_seen_by"] or "[]")
+    if data.staff_name not in seen:
+        seen.append(data.staff_name)
+    conn.execute("UPDATE calendar_events SET popup_seen_by=? WHERE id=?", (json.dumps(seen), event_id))
+    conn.commit()
+    conn.close()
+    return {"status": "dismissed"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEAM CHAT — global channel, all staff see the same messages
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/team-chat")
+def get_team_chat(since_id: int = 0, admin=Depends(require_admin)):
+    """
+    Returns messages newer than since_id. Pass since_id=0 for full history
+    (capped at the most recent 200), or pass the last message id you have
+    to poll for new messages only.
+    """
+    conn = get_db()
+    if since_id:
+        rows = conn.execute(
+            "SELECT * FROM team_chat_messages WHERE id > ? ORDER BY id ASC", (since_id,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM team_chat_messages ORDER BY id DESC LIMIT 200"
+        ).fetchall()
+        rows = list(reversed(rows))
+    conn.close()
+    return {"messages": [dict(r) for r in rows]}
+
+
+@app.post("/admin/team-chat")
+def post_team_chat(data: TeamChatMessageRequest, admin=Depends(require_admin)):
+    message = data.message.strip()
+    if not message:
+        raise HTTPException(400, "Message cannot be empty")
+    conn = get_db()
+    row = conn.execute("SELECT id, role FROM admin_users WHERE name=?", (admin["name"],)).fetchone()
+    conn.execute(
+        "INSERT INTO team_chat_messages (sender_id, sender_name, sender_role, message) VALUES (?,?,?,?)",
+        (row["id"] if row else None, admin["name"], row["role"] if row else admin.get("role"), message)
+    )
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status": "sent", "id": new_id}
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # INVOICES & PAYMENTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _calc_invoice_totals(line_items: list, discount: float, tax_percent: float):
-    subtotal   = sum(li.qty * li.unit_price for li in line_items)
-    after_disc = max(0, subtotal - discount)
-    tax_amount = after_disc * (tax_percent / 100)
-    total      = after_disc + tax_amount
+def _calc_invoice_totals(line_items: list, service_charge: float, tax_percent: float):
+    """
+    service_charge is ADDED to the subtotal (not subtracted) per business rule:
+    base price + service charge, then tax is applied on top of that.
+    The parameter/column name 'discount' is kept internally for DB compatibility,
+    but it now represents an additive service charge, not a price reduction.
+    """
+    subtotal     = sum(li.qty * li.unit_price for li in line_items)
+    after_charge = subtotal + service_charge
+    tax_amount   = after_charge * (tax_percent / 100)
+    total        = after_charge + tax_amount
     return subtotal, tax_amount, total
 
 
