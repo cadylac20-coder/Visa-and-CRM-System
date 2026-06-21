@@ -370,6 +370,8 @@ tbody tr:hover{background:var(--surface2)}
       <div class="view active" id="view-dashboard">
         <div class="stats-grid" id="stats-grid">
           <div class="stat-card"><div class="stat-value" id="stat-total">0</div><div class="stat-label">Total Applications</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--navy)" id="stat-this-month">0</div><div class="stat-label">This Month</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:var(--navy)" id="stat-this-year">0</div><div class="stat-label">This Year</div></div>
           <div class="stat-card"><div class="stat-value" style="color:var(--gold)" id="stat-pending">0</div><div class="stat-label">Pending Docs</div></div>
           <div class="stat-card"><div class="stat-value" style="color:var(--blue)" id="stat-review">0</div><div class="stat-label">Under Review</div></div>
           <div class="stat-card"><div class="stat-value" style="color:var(--green)" id="stat-approved">0</div><div class="stat-label">Approved</div></div>
@@ -494,7 +496,10 @@ tbody tr:hover{background:var(--surface2)}
       <div class="view" id="view-vfs">
         <div class="page-header">
           <div><h2>VFS Checklists</h2><p>Upload VFS PDFs, extract and edit requirements</p></div>
-          <button class="btn btn-primary btn-sm" onclick="openModal('new-checklist-modal')">+ New from VFS PDF</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="openExportChecklistsModal()">Export to PDF</button>
+            <button class="btn btn-primary btn-sm" onclick="openModal('new-checklist-modal')">+ New from VFS PDF</button>
+          </div>
         </div>
         <div class="vfs-split">
           <div>
@@ -529,7 +534,7 @@ tbody tr:hover{background:var(--surface2)}
               <button class="btn btn-ghost btn-sm" style="margin-top:8px;margin-bottom:16px" onclick="addChecklistItem()">+ Add Item</button>
               <div class="form-row">
                 <button class="btn btn-primary" onclick="saveChecklist()">Save Checklist</button>
-                <button class="btn btn-ghost" onclick="copyChecklist()">Copy to Clipboard</button>
+                <button class="btn btn-danger" onclick="deleteChecklistFromEditor()">Delete Checklist</button>
               </div>
             </div>
           </div>
@@ -1114,6 +1119,34 @@ tbody tr:hover{background:var(--surface2)}
   </div>
 </div>
 
+<!-- Export Checklists to PDF -->
+<div class="modal-overlay" id="export-checklists-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <span class="modal-title">Export VFS Checklists to PDF</span>
+      <button class="modal-close" onclick="closeModal('export-checklists-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Search Checklists</label>
+        <input type="text" id="export-checklist-search" placeholder="Search by country or visa type..." oninput="filterExportChecklistList(this.value)">
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:12px;color:var(--text3)" id="export-selected-count">0 selected</span>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-ghost btn-sm" onclick="selectAllExportChecklists()">Select All</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearExportChecklistSelection()">Clear</button>
+        </div>
+      </div>
+      <div id="export-checklist-list" style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r);padding:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('export-checklists-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="exportSelectedChecklistsPDF()">Export Selected as PDF</button>
+    </div>
+  </div>
+</div>
+
 <!-- Reminder Popup -->
 <div class="modal-overlay" id="reminder-popup-modal">
   <div class="modal" style="max-width:420px">
@@ -1137,7 +1170,6 @@ let TOKEN = '';
 let currentAppId = '';
 let editingChecklistId = null;
 let packages = JSON.parse(localStorage.getItem('mkov_packages') || '[]');
-let checklists = JSON.parse(localStorage.getItem('mkov_checklists') || '[]');
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 async function doLogin() {
@@ -1161,9 +1193,11 @@ async function doLogin() {
     document.getElementById('app').style.display = 'flex';
     applyRoleVisibility(data.role);
     loadDashboard();
-    loadChecklistsForSelect();
     renderPackages();
-    renderChecklists();
+    loadChecklistsFromServer().then(() => {
+      renderChecklists();
+      loadChecklistsForSelect();
+    });
     checkDueReminders();
     startTeamChatPolling();
   } catch(e) {
@@ -1245,7 +1279,7 @@ function nav(page) {
   else if (page === 'clients')          loadClients();
   else if (page === 'messages')         loadRecentComms();
   else if (page === 'packages')         renderPackages();
-  else if (page === 'vfs')              renderChecklists();
+  else if (page === 'vfs')              { loadChecklistsFromServer().then(renderChecklists); }
   else if (page === 'client-profile')   loadAllClients();
   else if (page === 'hotels')           { loadHotels(); if (!msgClients.length) loadMsgClients(); }
   else if (page === 'leads')            loadLeads();
@@ -1261,6 +1295,8 @@ async function loadDashboard() {
     const data = await api('/admin/dashboard');
     const s = data.stats;
     document.getElementById('stat-total').textContent    = s.total;
+    document.getElementById('stat-this-month').textContent = s.this_month;
+    document.getElementById('stat-this-year').textContent  = s.this_year;
     document.getElementById('stat-pending').textContent  = s.pending;
     document.getElementById('stat-review').textContent   = s.review;
     document.getElementById('stat-approved').textContent = s.approved;
@@ -1525,33 +1561,27 @@ async function createApplication() {
 }
 
 // ── VFS Checklists ────────────────────────────────────────────────────────────
+let allChecklists = [];
+
+async function loadChecklistsFromServer() {
+  try {
+    const data = await api('/admin/checklists');
+    allChecklists = data.checklists;
+  } catch(e) {
+    allChecklists = [];
+    console.error('Failed to load checklists', e);
+  }
+}
+
 function handleVFSUpload(input) {
   const file = input.files[0];
   if (!file) return;
-  // Since we can't run pdfjs server-side here, show manual text area
   document.getElementById('vfs-extracted').style.display = 'block';
   document.getElementById('vfs-raw-text').value = `PDF uploaded: ${file.name}\n\nCould not extract text in browser. Please manually paste the document list below, or type the required documents in the "type manually" field.`;
   toast('PDF uploaded — please type/paste documents below');
 }
 
-function handlePassportUpload(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const preview = document.getElementById('passport-preview');
-  preview.style.display = 'block';
-  preview.textContent = `✓ ${file.name} ready to upload (${(file.size/1024).toFixed(0)} KB)`;
-}
-
-async function fileToBase64(file) {
-  return new Promise((res, rej) => {
-    const reader = new FileReader();
-    reader.onload = () => res(reader.result.split(',')[1]);
-    reader.onerror = rej;
-    reader.readAsDataURL(file);
-  });
-}
-
-function saveVFSChecklist() {
+async function saveVFSChecklist() {
   const country  = document.getElementById('vfs-country').value.trim();
   const type     = document.getElementById('vfs-visa-type').value;
   const price    = parseFloat(document.getElementById('vfs-price').value) || 0;
@@ -1562,56 +1592,53 @@ function saveVFSChecklist() {
 
   if (!country || docs.length === 0) return toast('Enter country and at least one document','error');
 
-  const cl = {
-    id: Date.now(), country, visa_type: type,
-    name: `${country} ${type} — VFS`,
-    documents: docs, base_price: price, discount_percentage: 0,
-    final_price: price, created_at: new Date().toISOString()
-  };
-
-  // Save locally + push to API
-  checklists.push(cl);
-  localStorage.setItem('mkov_checklists', JSON.stringify(checklists));
-
-  api('/admin/checklist/create', {
-    method:'POST', body: JSON.stringify({
-      country, visa_type: type, name: cl.name,
-      documents: docs, base_price: price, discount_percentage: 0
-    })
-  }).then(r => {
-    if (r.id) { cl.api_id = r.id; localStorage.setItem('mkov_checklists', JSON.stringify(checklists)); }
-  }).catch(() => {});
-
-  closeModal('new-checklist-modal');
-  renderChecklists();
-  loadChecklistsForSelect();
-  toast('Checklist saved');
+  try {
+    await api('/admin/checklist/create', {
+      method:'POST', body: JSON.stringify({
+        country, visa_type: type, name: `${country} ${type} — VFS`,
+        documents: docs, base_price: price, discount_percentage: 0
+      })
+    });
+    closeModal('new-checklist-modal');
+    await loadChecklistsFromServer();
+    renderChecklists();
+    loadChecklistsForSelect();
+    toast('Checklist saved');
+  } catch(e) { toast('Error saving checklist','error'); }
 }
 
 function renderChecklists() {
   const container = document.getElementById('checklists-list');
-  if (checklists.length === 0) {
+  if (allChecklists.length === 0) {
     container.innerHTML = '<p style="color:var(--text3);font-size:13px">No checklists yet. Click "+ New from VFS PDF" to add one.</p>';
     return;
   }
-  container.innerHTML = checklists.map((cl, i) => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--surface2);border-radius:var(--r);margin-bottom:8px;border:1px solid var(--border)">
-      <div>
-        <div style="font-size:13px;font-weight:600">${cl.country} — ${cl.visa_type}</div>
-        <div style="font-size:12px;color:var(--text3)">${cl.documents.length} documents · ₹${cl.final_price || 0}</div>
+  container.innerHTML = allChecklists.map(cl => `
+    <div style="padding:14px;background:var(--surface2);border-radius:var(--r2);margin-bottom:10px;border:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:18px">${FLAGS[cl.country] || '🌍'}</span>
+          <div>
+            <div style="font-size:13.5px;font-weight:700;text-transform:uppercase;letter-spacing:.3px">${cl.country} — ${cl.visa_type}</div>
+            <div style="font-size:11.5px;color:var(--text3)">${cl.documents.length} document${cl.documents.length !== 1 ? 's' : ''} · Service Charge: Rs. ${(cl.final_price || cl.base_price || 0).toLocaleString('en-IN')}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="editChecklist(${cl.id})">Edit</button>
+        </div>
       </div>
-      <div style="display:flex;gap:6px">
-        <button class="btn btn-ghost btn-sm" onclick="editChecklist(${i})">Edit</button>
-        <button class="btn btn-ghost btn-sm" onclick="copyChecklistText(${i})">Copy</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteChecklist(${i})">Delete</button>
-      </div>
+      <ol style="margin:8px 0 0 28px;padding:0;font-size:12px;color:var(--text2);line-height:1.9">
+        ${cl.documents.slice(0,4).map(d => `<li>${d}</li>`).join('')}
+        ${cl.documents.length > 4 ? `<li style="color:var(--text3);list-style:none;margin-left:-18px">+ ${cl.documents.length - 4} more document${cl.documents.length - 4 !== 1 ? 's' : ''}</li>` : ''}
+      </ol>
     </div>
   `).join('');
 }
 
-function editChecklist(i) {
-  editingChecklistId = i;
-  const cl = checklists[i];
+function editChecklist(id) {
+  const cl = allChecklists.find(c => c.id === id);
+  if (!cl) return;
+  editingChecklistId = id;
   document.getElementById('checklist-editor-card').style.display = 'block';
   document.getElementById('checklist-editor-title').textContent = `Edit: ${cl.country} ${cl.visa_type}`;
   document.getElementById('edit-checklist-country').value = cl.country;
@@ -1649,46 +1676,137 @@ function getCurrentEditorDocs() {
   return Array.from(inputs).map(i => i.value.trim()).filter(Boolean);
 }
 
-function saveChecklist() {
+async function saveChecklist() {
   if (editingChecklistId === null) return;
-  const docs = getCurrentEditorDocs();
+  const docs  = getCurrentEditorDocs();
   const price = parseFloat(document.getElementById('edit-checklist-price').value) || 0;
-  checklists[editingChecklistId].documents = docs;
-  checklists[editingChecklistId].base_price = price;
-  checklists[editingChecklistId].final_price = price;
-  checklists[editingChecklistId].country = document.getElementById('edit-checklist-country').value;
-  checklists[editingChecklistId].visa_type = document.getElementById('edit-checklist-type').value;
-  localStorage.setItem('mkov_checklists', JSON.stringify(checklists));
-  renderChecklists();
-  toast('Checklist saved');
+  try {
+    await api(`/admin/checklist/${editingChecklistId}`, {
+      method:'PUT', body: JSON.stringify({base_price: price, documents: docs})
+    });
+    await loadChecklistsFromServer();
+    renderChecklists();
+    toast('Checklist saved');
+  } catch(e) { toast('Error saving checklist','error'); }
 }
 
-function copyChecklist() {
-  const docs = getCurrentEditorDocs();
-  const country = document.getElementById('edit-checklist-country').value;
-  const type = document.getElementById('edit-checklist-type').value;
-  const text = `${country.toUpperCase()} VISA — ${type.toUpperCase()}\n\nRequired Documents:\n${docs.map((d,i) => `${i+1}. ${d}`).join('\n')}`;
-  navigator.clipboard.writeText(text).then(() => toast('Copied to clipboard'));
-}
-
-function copyChecklistText(i) {
-  const cl = checklists[i];
-  const text = `${cl.country.toUpperCase()} VISA — ${cl.visa_type.toUpperCase()}\n\nRequired Documents:\n${cl.documents.map((d,j) => `${j+1}. ${d}`).join('\n')}`;
-  navigator.clipboard.writeText(text).then(() => toast('Copied'));
-}
-
-function deleteChecklist(i) {
-  if (!confirm('Delete this checklist?')) return;
-  checklists.splice(i, 1);
-  localStorage.setItem('mkov_checklists', JSON.stringify(checklists));
-  renderChecklists();
+async function deleteChecklistFromEditor() {
+  if (editingChecklistId === null) return;
+  if (!confirm('Delete this checklist? This cannot be undone.')) return;
+  try {
+    await api(`/admin/checklist/${editingChecklistId}`, {method:'DELETE'});
+    document.getElementById('checklist-editor-card').style.display = 'none';
+    editingChecklistId = null;
+    await loadChecklistsFromServer();
+    renderChecklists();
+    loadChecklistsForSelect();
+    toast('Checklist deleted');
+  } catch(e) { toast('Error deleting checklist','error'); }
 }
 
 function loadChecklistsForSelect() {
   const sel = document.getElementById('na-checklist-id');
   if (!sel) return;
-  const opts = checklists.map(cl => `<option value="${cl.api_id || ''}">${cl.country} — ${cl.visa_type} (₹${cl.final_price})</option>`).join('');
+  const opts = allChecklists.map(cl => `<option value="${cl.id}">${cl.country} — ${cl.visa_type} (Rs. ${(cl.final_price || cl.base_price || 0).toLocaleString('en-IN')})</option>`).join('');
   sel.innerHTML = '<option value="">Use default checklist</option>' + opts;
+}
+
+// ── Export Checklists to PDF ─────────────────────────────────────────────────
+let exportSelectedIds = new Set();
+
+function openExportChecklistsModal() {
+  exportSelectedIds = new Set();
+  document.getElementById('export-checklist-search').value = '';
+  renderExportChecklistList(allChecklists);
+  updateExportSelectedCount();
+  openModal('export-checklists-modal');
+}
+
+function filterExportChecklistList(query) {
+  const q = query.toLowerCase().trim();
+  const filtered = !q ? allChecklists : allChecklists.filter(cl =>
+    cl.country.toLowerCase().includes(q) || cl.visa_type.toLowerCase().includes(q)
+  );
+  renderExportChecklistList(filtered);
+}
+
+function renderExportChecklistList(list) {
+  const container = document.getElementById('export-checklist-list');
+  if (!list.length) {
+    container.innerHTML = '<p style="color:var(--text3);font-size:13px;padding:8px">No checklists match your search.</p>';
+    return;
+  }
+  container.innerHTML = list.map(cl => `
+    <label style="display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:var(--r);cursor:pointer" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+      <input type="checkbox" ${exportSelectedIds.has(cl.id) ? 'checked' : ''} onchange="toggleExportChecklist(${cl.id}, this.checked)" style="width:16px;height:16px;cursor:pointer">
+      <span style="font-size:15px">${FLAGS[cl.country] || '🌍'}</span>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${cl.country} — ${cl.visa_type}</div>
+        <div style="font-size:11px;color:var(--text3)">${cl.documents.length} documents</div>
+      </div>
+    </label>
+  `).join('');
+}
+
+function toggleExportChecklist(id, checked) {
+  if (checked) exportSelectedIds.add(id); else exportSelectedIds.delete(id);
+  updateExportSelectedCount();
+}
+
+function selectAllExportChecklists() {
+  allChecklists.forEach(cl => exportSelectedIds.add(cl.id));
+  renderExportChecklistList(allChecklists);
+  updateExportSelectedCount();
+}
+
+function clearExportChecklistSelection() {
+  exportSelectedIds.clear();
+  renderExportChecklistList(allChecklists);
+  updateExportSelectedCount();
+}
+
+function updateExportSelectedCount() {
+  const n = exportSelectedIds.size;
+  document.getElementById('export-selected-count').textContent = `${n} selected`;
+}
+
+async function exportSelectedChecklistsPDF() {
+  if (!exportSelectedIds.size) return toast('Select at least one checklist','error');
+  try {
+    const r = await fetch(`${API}/admin/checklists/export-pdf`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
+      body: JSON.stringify({checklist_ids: Array.from(exportSelectedIds)})
+    });
+    if (!r.ok) throw new Error('Export failed');
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = exportSelectedIds.size > 1 ? 'vfs_checklist_export.pdf' : 'checklist.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+    closeModal('export-checklists-modal');
+    toast('PDF downloaded');
+  } catch(e) { toast('Export failed','error'); }
+}
+
+
+function handlePassportUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const preview = document.getElementById('passport-preview');
+  preview.style.display = 'block';
+  preview.textContent = `✓ ${file.name} ready to upload (${(file.size/1024).toFixed(0)} KB)`;
+}
+
+async function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const reader = new FileReader();
+    reader.onload = () => res(reader.result.split(',')[1]);
+    reader.onerror = rej;
+    reader.readAsDataURL(file);
+  });
 }
 
 // ── Packages ──────────────────────────────────────────────────────────────────
