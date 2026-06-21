@@ -78,6 +78,9 @@ class UpdateChecklistData(BaseModel):
     discount_percentage: Optional[float] = None
     documents: Optional[list] = None
 
+class ExportChecklistsRequest(BaseModel):
+    checklist_ids: list[int]
+
 class ClientDiscountData(BaseModel):
     client_id: int; checklist_id: int
     discount_type: str; discount_value: float; reason: Optional[str] = ""
@@ -254,6 +257,12 @@ def admin_dashboard(admin=Depends(require_admin)):
         "approved": conn.execute("SELECT COUNT(*) FROM applications WHERE status='approved'").fetchone()[0],
         "rejected": conn.execute("SELECT COUNT(*) FROM applications WHERE status='rejected'").fetchone()[0],
         "clients":  conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0],
+        "this_month": conn.execute(
+            "SELECT COUNT(*) FROM applications WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')"
+        ).fetchone()[0],
+        "this_year": conn.execute(
+            "SELECT COUNT(*) FROM applications WHERE strftime('%Y', created_at) = strftime('%Y', 'now')"
+        ).fetchone()[0],
     }
     conn.close()
     return {"stats": stats, "applications": [dict(a) for a in apps]}
@@ -432,12 +441,17 @@ def get_checklists_by_country(country: str, admin=Depends(require_admin)):
 
 @app.put("/admin/checklist/{checklist_id}")
 def update_checklist(checklist_id: int, data: UpdateChecklistData, admin=Depends(require_roles("visa_staff"))):
+    """
+    Note: field name 'discount_percentage' is kept for DB compatibility, but
+    it represents an ADDITIVE service charge percentage, not a price reduction
+    (consistent with fee structure and invoice service charges elsewhere).
+    """
     conn = get_db()
     if data.base_price is not None:
         conn.execute("UPDATE custom_checklists SET base_price=? WHERE id=?", (data.base_price, checklist_id))
     if data.discount_percentage is not None:
         row = conn.execute("SELECT base_price FROM custom_checklists WHERE id=?", (checklist_id,)).fetchone()
-        fp = (row["base_price"] if row else 0) * (1 - data.discount_percentage/100)
+        fp = (row["base_price"] if row else 0) * (1 + data.discount_percentage/100)
         conn.execute("UPDATE custom_checklists SET discount_percentage=?, final_price=? WHERE id=?", (data.discount_percentage, fp, checklist_id))
     if data.documents is not None:
         conn.execute("UPDATE custom_checklists SET documents_json=? WHERE id=?", (json.dumps(data.documents), checklist_id))
@@ -445,7 +459,124 @@ def update_checklist(checklist_id: int, data: UpdateChecklistData, admin=Depends
     conn.commit(); conn.close()
     return {"status": "updated"}
 
-@app.post("/admin/client-discount")
+@app.delete("/admin/checklist/{checklist_id}")
+def delete_checklist(checklist_id: int, admin=Depends(require_roles("visa_staff"))):
+    conn = get_db()
+    row = conn.execute("SELECT id FROM custom_checklists WHERE id=?", (checklist_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, "Checklist not found")
+    conn.execute("DELETE FROM custom_checklists WHERE id=?", (checklist_id,))
+    conn.commit(); conn.close()
+    return {"status": "deleted"}
+
+@app.post("/admin/checklists/export-pdf")
+def export_checklists_pdf(data: ExportChecklistsRequest, admin=Depends(require_admin)):
+    """
+    Generate a single PDF containing one formatted page per selected
+    checklist, in the standard VFS-style layout: header block (country,
+    visa type, service charge) followed by a numbered document list.
+    """
+    if not data.checklist_ids:
+        raise HTTPException(400, "Select at least one checklist to export")
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+
+    conn = get_db()
+    placeholders = ",".join("?" * len(data.checklist_ids))
+    rows = conn.execute(
+        f"SELECT * FROM custom_checklists WHERE id IN ({placeholders}) ORDER BY country, visa_type",
+        data.checklist_ids
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        raise HTTPException(404, "No matching checklists found")
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(
+        tmp.name, pagesize=A4,
+        topMargin=20*mm, bottomMargin=20*mm, leftMargin=20*mm, rightMargin=20*mm
+    )
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "ChecklistTitle", parent=styles["Title"], fontSize=16,
+        textColor=colors.HexColor("#1e3a5f"), alignment=TA_CENTER, spaceAfter=4
+    )
+    subtitle_style = ParagraphStyle(
+        "ChecklistSubtitle", parent=styles["Normal"], fontSize=10,
+        textColor=colors.HexColor("#666666"), alignment=TA_CENTER, spaceAfter=16
+    )
+    section_style = ParagraphStyle(
+        "SectionHeader", parent=styles["Heading2"], fontSize=12,
+        textColor=colors.HexColor("#1e3a5f"), spaceBefore=10, spaceAfter=8
+    )
+    doc_item_style = ParagraphStyle(
+        "DocItem", parent=styles["Normal"], fontSize=10.5, leading=16, spaceAfter=4
+    )
+    footer_style = ParagraphStyle(
+        "Footer", parent=styles["Normal"], fontSize=8,
+        textColor=colors.HexColor("#888888"), spaceBefore=20
+    )
+
+    story = []
+    for i, row in enumerate(rows):
+        cl = dict(row)
+        documents = json.loads(cl["documents_json"])
+
+        story.append(Paragraph("UNIGLOBE MKOV TRAVEL", title_style))
+        story.append(Paragraph("Visa Document Checklist", subtitle_style))
+
+        # Header info block — name/passport/email/mobile fields for the applicant to fill in
+        header_data = [
+            ["Country:", cl["country"], "Visa Type:", cl["visa_type"].title()],
+            ["Applicant Name:", "_" * 28, "Passport No.:", "_" * 20],
+            ["Email ID:", "_" * 28, "Mobile No.:", "_" * 20],
+        ]
+        header_table = Table(header_data, colWidths=[28*mm, 62*mm, 28*mm, 52*mm])
+        header_table.setStyle(TableStyle([
+            ("FONTSIZE", (0,0), (-1,-1), 9.5),
+            ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"),
+            ("FONTNAME", (2,0), (2,-1), "Helvetica-Bold"),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+            ("TOPPADDING", (0,0), (-1,-1), 6),
+            ("LINEBELOW", (0,0), (-1,-1), 0.5, colors.HexColor("#dddddd")),
+        ]))
+        story.append(header_table)
+        story.append(Spacer(1, 14))
+
+        if cl.get("final_price"):
+            story.append(Paragraph(f"Service Charge: Rs. {cl['final_price']:.2f}", section_style))
+
+        story.append(Paragraph("Required Documents", section_style))
+        for idx, item in enumerate(documents, 1):
+            story.append(Paragraph(f"{idx}. [ ] {item}", doc_item_style))
+
+        story.append(Paragraph(
+            "Please ensure all documents are originals or self-attested photocopies as applicable. "
+            "Incomplete submissions may delay processing.",
+            footer_style
+        ))
+        story.append(Paragraph(
+            "Applicant Signature: ______________________     Date: ______________",
+            footer_style
+        ))
+
+        if i < len(rows) - 1:
+            story.append(PageBreak())
+
+    doc.build(story)
+
+    filename = "vfs_checklist_export.pdf" if len(rows) > 1 else f"{rows[0]['country']}_{rows[0]['visa_type']}_checklist.pdf"
+    return FileResponse(tmp.name, filename=filename, media_type="application/pdf")
+
+
 def add_client_discount(data: ClientDiscountData, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
     try:
