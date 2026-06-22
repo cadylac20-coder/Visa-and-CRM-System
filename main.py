@@ -7,6 +7,17 @@ import json
 import shutil
 import tempfile
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+# All timestamps in this system are in IST (Asia/Kolkata, UTC+5:30)
+IST = ZoneInfo("Asia/Kolkata")
+
+def now_ist() -> datetime:
+    """Return current datetime in IST."""
+    return datetime.now(tz=IST)
+
+def now_ist_str(fmt: str = "%Y-%m-%dT%H:%M:%S") -> str:
+    return now_ist().strftime(fmt)
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -370,7 +381,7 @@ def admin_create_application(data: NewApplicationRequest, admin=Depends(require_
     client = conn.execute("SELECT * FROM clients WHERE email=?", (data.client_email,)).fetchone()
     if not client: conn.close(); raise HTTPException(404, "Client not found")
     count  = conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
-    app_id = f"VIS-{datetime.now().year}-{str(count+1).zfill(3)}"
+    app_id = f"VIS-{now_ist().year}-{str(count+1).zfill(3)}"
     conn.execute("INSERT INTO applications (app_id, client_id, destination, visa_type, travel_date, checklist_id) VALUES (?,?,?,?,?,?)",
                  (app_id, client["id"], data.destination, data.visa_type, data.travel_date, data.checklist_id))
     doc_map = {
@@ -745,7 +756,7 @@ async def client_upload_doc(app_id: str, doc_type: str = Form(...), file: Upload
     file_path = os.path.join(UPLOAD_DIR, file_name)
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    now = datetime.now().isoformat()
+    now = now_ist_str()
     conn.execute("UPDATE documents SET status='uploaded', file_name=?, file_path=?, uploaded_at=? WHERE app_id=? AND doc_type=?",
                  (file_name, file_path, now, app_id, doc_type))
     conn.execute("INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
@@ -942,7 +953,7 @@ async def admin_upload_doc(
 
     content = await file.read()
     b64     = base64.b64encode(content).decode()
-    now     = datetime.now().isoformat()
+    now     = now_ist_str()
 
     # Check if doc_type row exists — update or insert
     existing = conn.execute(
@@ -1596,7 +1607,7 @@ def convert_lead_to_client(lead_id: int, data: ConvertLeadRequest, admin=Depends
         client_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
     count  = conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
-    app_id = f"VIS-{datetime.now().year}-{str(count+1).zfill(3)}"
+    app_id = f"VIS-{now_ist().year}-{str(count+1).zfill(3)}"
 
     conn.execute("""
         INSERT INTO applications (app_id, client_id, destination, visa_type, status, progress)
@@ -1965,7 +1976,7 @@ def create_invoice(data: NewInvoiceRequest, admin=Depends(require_roles("visa_st
 
     subtotal, tax_amount, total = _calc_invoice_totals(data.line_items, data.discount, data.tax_percent)
     count = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
-    invoice_no = f"INV-{datetime.now().year}-{str(count+1).zfill(3)}"
+    invoice_no = f"INV-{now_ist().year}-{str(count+1).zfill(3)}"
 
     line_items_json = json.dumps([
         {"label": li.label, "qty": li.qty, "unit_price": li.unit_price, "amount": round(li.qty * li.unit_price, 2)}
@@ -2056,7 +2067,7 @@ def record_payment(invoice_id: int, data: RecordPaymentRequest, admin=Depends(re
         conn.close()
         raise HTTPException(404, "Invoice not found")
 
-    paid_at = data.paid_at or datetime.now().strftime("%Y-%m-%d")
+    paid_at = data.paid_at or now_ist().strftime("%Y-%m-%d")
     conn.execute("""
         INSERT INTO invoice_payments (invoice_id, amount, method, reference, paid_at, notes, recorded_by)
         VALUES (?,?,?,?,?,?,?)
@@ -2098,3 +2109,184 @@ def export_invoices(admin=Depends(require_roles("visa_staff"))):
         d["balance_due"] = round((d["total"] or 0) - (d["amount_paid"] or 0), 2)
         out.append(d)
     return {"invoices": out}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# IST HELPER — used by all endpoints when inserting manual timestamps
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _log_staff_activity(conn, staff_name: str, staff_role: str, action: str,
+                         detail: str = "", session_id: str = ""):
+    """Insert a staff activity record with IST timestamp."""
+    staff_row = conn.execute(
+        "SELECT id FROM admin_users WHERE name=?", (staff_name,)
+    ).fetchone()
+    staff_id = staff_row["id"] if staff_row else None
+    conn.execute("""
+        INSERT INTO staff_activity_log (staff_id, staff_name, staff_role, action, detail, session_id)
+        VALUES (?,?,?,?,?,?)
+    """, (staff_id, staff_name, staff_role, action, detail, session_id))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STAFF ACTIVITY MONITORING — superadmin only
+# ══════════════════════════════════════════════════════════════════════════════
+
+class StaffActivityRequest(BaseModel):
+    action:     str
+    detail:     Optional[str] = ""
+    session_id: Optional[str] = ""
+
+
+@app.post("/admin/log-activity")
+def log_my_activity(data: StaffActivityRequest, admin=Depends(require_admin)):
+    """Called by the frontend to log actions (page visits, saves, logouts)."""
+    conn = get_db()
+    _log_staff_activity(conn, admin["name"], admin.get("role", ""), data.action, data.detail, data.session_id)
+    conn.commit()
+    conn.close()
+    return {"status": "logged"}
+
+
+@app.get("/admin/staff-activity")
+def get_all_staff_activity(admin=Depends(require_superadmin)):
+    """Superadmin: see recent activity for all staff members."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT sal.*, au.email
+        FROM staff_activity_log sal
+        LEFT JOIN admin_users au ON au.id = sal.staff_id
+        ORDER BY sal.created_at DESC
+        LIMIT 500
+    """).fetchall()
+    conn.close()
+    return {"activity": [dict(r) for r in rows]}
+
+
+@app.get("/admin/staff-activity/{staff_id}")
+def get_staff_member_activity(staff_id: int, admin=Depends(require_superadmin)):
+    """Superadmin: full activity log for one specific staff member."""
+    conn = get_db()
+    staff = conn.execute(
+        "SELECT id, name, email, role, active, created_at FROM admin_users WHERE id=?", (staff_id,)
+    ).fetchone()
+    if not staff:
+        conn.close()
+        raise HTTPException(404, "Staff member not found")
+
+    activity = conn.execute("""
+        SELECT * FROM staff_activity_log WHERE staff_id=?
+        ORDER BY created_at DESC LIMIT 200
+    """, (staff_id,)).fetchall()
+
+    # Calculate session durations from login/logout pairs
+    sessions = []
+    login_time = None
+    for row in reversed(activity):
+        if row["action"] == "login":
+            login_time = row["created_at"]
+        elif row["action"] == "logout" and login_time:
+            sessions.append({"login": login_time, "logout": row["created_at"]})
+            login_time = None
+
+    conn.close()
+    return {
+        "staff":    dict(staff),
+        "activity": [dict(r) for r in activity],
+        "sessions": sessions
+    }
+
+
+@app.get("/admin/staff-online")
+def get_staff_online_status(admin=Depends(require_superadmin)):
+    """Return all staff with their last-seen timestamp."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT au.id, au.name, au.email, au.role, au.active,
+               MAX(sal.created_at) as last_seen,
+               MAX(CASE WHEN sal.action='login' THEN sal.created_at END) as last_login
+        FROM admin_users au
+        LEFT JOIN staff_activity_log sal ON sal.staff_id = au.id
+        WHERE au.role != 'client'
+        GROUP BY au.id
+        ORDER BY last_seen DESC NULLS LAST
+    """).fetchall()
+    conn.close()
+    return {"staff": [dict(r) for r in rows]}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DIRECT MESSAGES & PINGS — superadmin can message any staff member
+# ══════════════════════════════════════════════════════════════════════════════
+
+class DirectMessageRequest(BaseModel):
+    to_id:   int
+    message: str
+    is_ping: int = 0   # 1 = urgent ping
+
+
+@app.post("/admin/direct-message")
+def send_direct_message(data: DirectMessageRequest, admin=Depends(require_superadmin)):
+    conn = get_db()
+    to_staff = conn.execute("SELECT id, name FROM admin_users WHERE id=?", (data.to_id,)).fetchone()
+    if not to_staff:
+        conn.close()
+        raise HTTPException(404, "Staff member not found")
+    sender = conn.execute(
+        "SELECT id FROM admin_users WHERE name=?", (admin["name"],)
+    ).fetchone()
+    conn.execute("""
+        INSERT INTO staff_direct_messages (from_id, from_name, to_id, to_name, message, is_ping)
+        VALUES (?,?,?,?,?,?)
+    """, (sender["id"] if sender else 0, admin["name"],
+          data.to_id, to_staff["name"], data.message, data.is_ping))
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status": "sent", "id": new_id}
+
+
+@app.get("/admin/direct-messages/{staff_id}")
+def get_direct_messages(staff_id: int, admin=Depends(require_admin)):
+    """Get conversation between superadmin and this staff member."""
+    conn = get_db()
+    my_id_row = conn.execute(
+        "SELECT id FROM admin_users WHERE name=?", (admin["name"],)
+    ).fetchone()
+    my_id = my_id_row["id"] if my_id_row else 0
+
+    rows = conn.execute("""
+        SELECT * FROM staff_direct_messages
+        WHERE (from_id=? AND to_id=?) OR (from_id=? AND to_id=?)
+        ORDER BY created_at ASC
+    """, (my_id, staff_id, staff_id, my_id)).fetchall()
+
+    # Mark unread messages to me as read
+    conn.execute("""
+        UPDATE staff_direct_messages
+        SET read_at = datetime('now', '+5 hours', '+30 minutes')
+        WHERE to_id=? AND from_id=? AND read_at IS NULL
+    """, (my_id, staff_id))
+    conn.commit()
+    conn.close()
+    return {"messages": [dict(r) for r in rows]}
+
+
+@app.get("/admin/my-messages")
+def get_my_messages(admin=Depends(require_admin)):
+    """Get all messages/pings addressed to me, plus unread count."""
+    conn = get_db()
+    my_id_row = conn.execute(
+        "SELECT id FROM admin_users WHERE name=?", (admin["name"],)
+    ).fetchone()
+    my_id = my_id_row["id"] if my_id_row else 0
+
+    rows = conn.execute("""
+        SELECT * FROM staff_direct_messages
+        WHERE to_id=? ORDER BY created_at DESC LIMIT 50
+    """, (my_id,)).fetchall()
+    unread = conn.execute(
+        "SELECT COUNT(*) FROM staff_direct_messages WHERE to_id=? AND read_at IS NULL", (my_id,)
+    ).fetchone()[0]
+    conn.close()
+    return {"messages": [dict(r) for r in rows], "unread": unread}
