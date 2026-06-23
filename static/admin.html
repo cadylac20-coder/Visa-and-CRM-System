@@ -339,6 +339,11 @@ tbody tr:hover{background:var(--surface2)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         Staff & Roles
       </button>
+      <button class="nav-item" data-page="staff-monitoring" onclick="nav('staff-monitoring')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        Staff Monitor
+        <span class="badge" id="nav-unread-count" style="background:var(--red);display:none">0</span>
+      </button>
     </nav>
     <div class="sidebar-footer">
       <div class="user-chip">
@@ -821,8 +826,37 @@ tbody tr:hover{background:var(--surface2)}
           <div class="card-title">Role Permissions</div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;font-size:13px">
             <div><strong style="color:var(--teal)">Sales</strong><p style="color:var(--text3);margin-top:4px">Leads, follow-ups, clients, messaging, packages</p></div>
-            <div><strong style="color:var(--blue)">Visa Staff</strong><p style="color:var(--text3);margin-top:4px">Applications, documents, checklists, hotels, invoices, payments, fee structure</p></div>
-            <div><strong style="color:var(--red)">Super Admin</strong><p style="color:var(--text3);margin-top:4px">Full access to everything, including staff management</p></div>
+            <div><strong style="color:#2f9e44">Sales Admin</strong><p style="color:var(--text3);margin-top:4px">Everything Sales does + manage sales team members</p></div>
+            <div><strong style="color:var(--blue)">Visa Staff</strong><p style="color:var(--text3);margin-top:4px">Applications, documents, checklists, hotels, invoices, payments</p></div>
+            <div><strong style="color:#1971c2">Visa Admin</strong><p style="color:var(--text3);margin-top:4px">Everything Visa Staff does + manage visa team members</p></div>
+            <div><strong style="color:var(--red)">Super Admin</strong><p style="color:var(--text3);margin-top:4px">Full access, staff monitoring, direct messages, all settings</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAFF MONITORING -->
+      <div class="view" id="view-staff-monitoring">
+        <div class="page-header">
+          <div><h2>Staff Monitor</h2><p>View activity, session time and message any team member</p></div>
+          <button class="btn btn-ghost btn-sm" onclick="loadStaffMonitor()">Refresh</button>
+        </div>
+
+        <!-- Staff online status grid -->
+        <div id="staff-online-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:24px"></div>
+
+        <!-- Activity log table -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div class="card-title" style="margin:0">All Staff Activity</div>
+            <select id="monitor-staff-filter" onchange="filterMonitorActivity()" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:7px 10px;color:var(--text);font-size:13px;outline:none">
+              <option value="">All Staff</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Staff Member</th><th>Role</th><th>Action</th><th>Detail</th><th>Time (IST)</th></tr></thead>
+              <tbody id="monitor-activity-table"></tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -1203,6 +1237,8 @@ async function doLogin() {
     });
     checkDueReminders();
     startTeamChatPolling();
+    logActivity('login', `Logged in as ${data.role}`);
+    startMessagePolling();
   } catch(e) {
     document.getElementById('login-error').style.display = 'block';
     document.getElementById('login-error').textContent = 'Invalid email or password';
@@ -1267,6 +1303,7 @@ const PAGE_TITLES = {
   'client-profile':'Client Profile', hotels:'Hotel CRM', dashboard:'Dashboard', applications:'Applications', clients:'Clients',
   vfs:'VFS Checklists', packages:'Packages', messages:'Send Message', export:'Export CRM',
   leads:'Leads & Follow-ups', calendar:'Calendar', invoices:'Invoices & Payments', 'staff-management':'Staff & Roles',
+  'staff-monitoring':'Staff Monitor',
   'team-chat':'Team Chat'
 };
 
@@ -1291,6 +1328,7 @@ function nav(page) {
   else if (page === 'calendar')         loadCalendar();
   else if (page === 'invoices')         loadInvoices();
   else if (page === 'staff-management') loadStaff();
+  else if (page === 'staff-monitoring') loadStaffMonitor();
   else if (page === 'team-chat')        { loadTeamChat(); scrollChatToBottom(); }
 }
 
@@ -3892,6 +3930,218 @@ async function deleteStaffConfirm(id, name) {
     loadStaff();
   } catch(e) { toast('Error removing staff','error'); }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACTIVITY LOGGING — every meaningful action is logged for superadmin review
+// ══════════════════════════════════════════════════════════════════════════════
+const SESSION_ID = Math.random().toString(36).slice(2);
+
+function logActivity(action, detail) {
+  if (!TOKEN) return;
+  api('/admin/log-activity', {
+    method: 'POST',
+    body: JSON.stringify({action, detail, session_id: SESSION_ID})
+  }).catch(() => {});
+}
+
+// Log page navigation
+const __navOrig = nav;
+function nav(page) {
+  __navOrig(page);
+  logActivity('view', `Visited page: ${page}`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STAFF MONITORING — superadmin views all staff activity and last-seen times
+// ══════════════════════════════════════════════════════════════════════════════
+let allMonitorActivity = [];
+let currentDmStaffId = null;
+
+async function loadStaffMonitor() {
+  try {
+    const [onlineData, activityData] = await Promise.all([
+      api('/admin/staff-online'),
+      api('/admin/staff-activity')
+    ]);
+
+    // Render staff cards
+    const grid = document.getElementById('staff-online-grid');
+    grid.innerHTML = onlineData.staff.map(s => {
+      const lastSeenStr = s.last_seen ? formatDateTime(s.last_seen) : 'Never';
+      const isRecent = s.last_seen && (Date.now() - new Date(s.last_seen + '+05:30').getTime()) < 15 * 60 * 1000;
+      return `
+        <div class="card" style="padding:16px;position:relative">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--navy),var(--teal));display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:white;flex-shrink:0;position:relative">
+              ${s.name[0].toUpperCase()}
+              <div style="position:absolute;bottom:0;right:0;width:10px;height:10px;border-radius:50%;background:${isRecent ? 'var(--green)' : 'var(--text3)'};border:2px solid white"></div>
+            </div>
+            <div>
+              <div style="font-size:13px;font-weight:600">${s.name}</div>
+              <div style="font-size:11px"><span class="status status-${roleStatusClass(s.role)}">${roleLabel(s.role)}</span></div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:8px">
+            Last seen: ${lastSeenStr}
+          </div>
+          ${s.active ? `
+            <button class="btn btn-primary btn-sm" style="width:100%;justify-content:center" onclick="openDirectMessage(${s.id},'${s.name}')">
+              Message / Ping
+            </button>
+          ` : '<div style="font-size:12px;color:var(--red)">Account disabled</div>'}
+        </div>
+      `;
+    }).join('');
+
+    // Populate staff filter dropdown
+    const filter = document.getElementById('monitor-staff-filter');
+    filter.innerHTML = '<option value="">All Staff</option>' +
+      onlineData.staff.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+
+    // Render activity table
+    allMonitorActivity = activityData.activity;
+    renderMonitorTable(allMonitorActivity);
+
+  } catch(e) { console.error(e); toast('Error loading monitor data','error'); }
+}
+
+function filterMonitorActivity() {
+  const staffId = document.getElementById('monitor-staff-filter').value;
+  const filtered = staffId
+    ? allMonitorActivity.filter(a => String(a.staff_id) === staffId)
+    : allMonitorActivity;
+  renderMonitorTable(filtered);
+}
+
+function renderMonitorTable(rows) {
+  document.getElementById('monitor-activity-table').innerHTML = rows.map(a => `
+    <tr>
+      <td><strong>${a.staff_name}</strong></td>
+      <td><span style="font-size:11px">${roleLabel(a.staff_role || '')}</span></td>
+      <td style="text-transform:capitalize;font-size:12px">${a.action}</td>
+      <td style="font-size:12px;color:var(--text3);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.detail || '—'}</td>
+      <td style="font-size:11px;font-family:var(--mono)">${formatDateTime(a.created_at)}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text3)">No activity logged yet</td></tr>';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DIRECT MESSAGES & PINGS
+// ══════════════════════════════════════════════════════════════════════════════
+async function openDirectMessage(staffId, staffName) {
+  currentDmStaffId = staffId;
+  document.getElementById('dm-modal-title').textContent = `Message — ${staffName}`;
+  document.getElementById('dm-input').value = '';
+  openModal('direct-message-modal');
+  await loadDmConversation(staffId);
+}
+
+async function loadDmConversation(staffId) {
+  try {
+    const data = await api(`/admin/direct-messages/${staffId}`);
+    const conv = document.getElementById('dm-conversation');
+    if (!data.messages.length) {
+      conv.innerHTML = '<p style="color:var(--text3);font-size:13px;text-align:center;margin-top:20px">No messages yet. Send the first one.</p>';
+      return;
+    }
+    conv.innerHTML = data.messages.map(m => {
+      const mine = m.from_name === CURRENT_STAFF_NAME;
+      const isPing = m.is_ping;
+      return `
+        <div style="display:flex;flex-direction:column;align-items:${mine ? 'flex-end' : 'flex-start'}">
+          <div style="background:${isPing ? 'var(--red)' : mine ? 'var(--teal)' : 'white'};
+                      color:${isPing || mine ? '#000' : 'var(--text)'};
+                      border:1px solid ${isPing ? 'var(--red)' : mine ? 'transparent' : 'var(--border)'};
+                      border-radius:${mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px'};
+                      padding:8px 12px;max-width:80%">
+            ${isPing ? '<div style="font-size:11px;font-weight:700;margin-bottom:3px">🔔 PING</div>' : ''}
+            <div style="font-size:13px">${escapeHtml(m.message)}</div>
+          </div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">${formatDateTime(m.created_at)}</div>
+        </div>
+      `;
+    }).join('');
+    conv.scrollTop = conv.scrollHeight;
+  } catch(e) { toast('Error loading messages','error'); }
+}
+
+async function sendDirectMessage() {
+  const msg = document.getElementById('dm-input').value.trim();
+  if (!msg || !currentDmStaffId) return;
+  document.getElementById('dm-input').value = '';
+  try {
+    await api('/admin/direct-message', {
+      method: 'POST',
+      body: JSON.stringify({to_id: currentDmStaffId, message: msg, is_ping: 0})
+    });
+    await loadDmConversation(currentDmStaffId);
+    logActivity('message', `Sent message to staff #${currentDmStaffId}`);
+  } catch(e) { toast('Error sending message','error'); }
+}
+
+async function sendPing() {
+  if (!currentDmStaffId) return;
+  const msg = document.getElementById('dm-input').value.trim() || 'You have been pinged by the admin. Please respond.';
+  document.getElementById('dm-input').value = '';
+  try {
+    await api('/admin/direct-message', {
+      method: 'POST',
+      body: JSON.stringify({to_id: currentDmStaffId, message: msg, is_ping: 1})
+    });
+    await loadDmConversation(currentDmStaffId);
+    toast('Ping sent');
+  } catch(e) { toast('Error sending ping','error'); }
+}
+
+// ── Message polling for non-superadmin staff (check for pings) ───────────────
+let msgPollHandle = null;
+
+function startMessagePolling() {
+  if (msgPollHandle) clearInterval(msgPollHandle);
+  checkMyMessages();
+  msgPollHandle = setInterval(checkMyMessages, 15000);
+}
+
+async function checkMyMessages() {
+  if (!TOKEN) return;
+  try {
+    const data = await api('/admin/my-messages');
+    const unread = data.unread || 0;
+    const badge = document.getElementById('nav-unread-count');
+    if (badge) {
+      badge.textContent = unread;
+      badge.style.display = unread > 0 ? 'inline' : 'none';
+    }
+    // Show popup for unread pings
+    const pings = data.messages.filter(m => m.is_ping && !m.read_at);
+    if (pings.length) {
+      toast(`🔔 Ping from ${pings[0].from_name}: ${pings[0].message}`, 'error');
+    }
+  } catch(e) {}
+}
+
+async function openMyMessages() {
+  openModal('my-messages-modal');
+  try {
+    const data = await api('/admin/my-messages');
+    const body = document.getElementById('my-messages-body');
+    if (!data.messages.length) {
+      body.innerHTML = '<p style="color:var(--text3);font-size:13px">No messages yet.</p>';
+      return;
+    }
+    body.innerHTML = data.messages.map(m => `
+      <div class="activity-item" style="margin-bottom:8px">
+        <div class="activity-dot" style="background:${m.is_ping ? 'var(--red)' : 'var(--teal)'}"></div>
+        <div class="activity-content">
+          <div class="activity-action">${m.is_ping ? '🔔 Ping' : 'Message'} from ${m.from_name}</div>
+          <div class="activity-detail">${escapeHtml(m.message)}</div>
+          <div class="activity-detail">${formatDateTime(m.created_at)}</div>
+        </div>
+        ${m.read_at ? '' : '<span style="font-size:10px;background:var(--red);color:white;padding:2px 6px;border-radius:8px;flex-shrink:0">NEW</span>'}
+      </div>
+    `).join('');
+  } catch(e) {}
+}
 </script>
 
 
@@ -4240,7 +4490,9 @@ async function deleteStaffConfirm(id, name) {
         <div class="form-group"><label>Role</label>
           <select id="staff-role">
             <option value="sales">Sales — leads, clients, messaging</option>
+            <option value="sales_admin">Sales Admin — leads, clients, messaging + manage sales team</option>
             <option value="visa_staff">Visa Staff — applications, documents, hotels, invoices</option>
+            <option value="visa_admin">Visa Admin — applications, documents, hotels, invoices + manage visa team</option>
             <option value="superadmin">Super Admin — full access</option>
           </select>
         </div>
@@ -4249,6 +4501,45 @@ async function deleteStaffConfirm(id, name) {
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('staff-modal')">Cancel</button>
       <button class="btn btn-primary" id="staff-save-btn" onclick="saveStaff()">Add Staff</button>
+    </div>
+  </div>
+</div>
+
+<!-- Direct Message / Ping Modal -->
+<div class="modal-overlay" id="direct-message-modal">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <span class="modal-title" id="dm-modal-title">Message Staff Member</span>
+      <button class="modal-close" onclick="closeModal('direct-message-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:12px;margin-bottom:16px" id="dm-history"></div>
+      <div style="border:1px solid var(--border);border-radius:var(--r2);overflow:hidden">
+        <div id="dm-conversation" style="height:260px;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;background:var(--surface2)"></div>
+        <div style="padding:10px;border-top:1px solid var(--border);display:flex;gap:8px;background:var(--surface)">
+          <input type="text" id="dm-input" placeholder="Type a message..."
+            style="flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 12px;color:var(--text);font-size:13px;outline:none"
+            onkeydown="if(event.key==='Enter')sendDirectMessage()">
+          <button class="btn btn-ghost btn-sm" onclick="sendPing()" title="Send urgent ping">🔔 Ping</button>
+          <button class="btn btn-primary btn-sm" onclick="sendDirectMessage()">Send</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('direct-message-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- My Messages Modal (for non-superadmin staff to see messages from superadmin) -->
+<div class="modal-overlay" id="my-messages-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <span class="modal-title">My Messages</span>
+      <button class="modal-close" onclick="closeModal('my-messages-modal')">×</button>
+    </div>
+    <div class="modal-body" id="my-messages-body">
+      <p style="color:var(--text3);font-size:13px">No messages yet.</p>
     </div>
   </div>
 </div>
