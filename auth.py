@@ -35,11 +35,14 @@ def decode_token(token: str) -> dict:
 
 
 # ── Roles ──────────────────────────────────────────────────────────────────────
-# superadmin : full access, can create/edit/remove staff and assign roles
-# sales      : leads, follow-ups, clients, messaging
-# visa_staff : applications, documents, checklists, hotels, invoices, payments, fee structure
-# staff      : legacy role, treated like superadmin for backward compatibility
-ALL_ROLES = ("superadmin", "staff", "sales", "visa_staff")
+# superadmin  : full access, can create/edit/remove staff and assign roles,
+#               can view all staff activity, message any staff member
+# sales_admin : full sales access + can manage other sales staff
+# visa_admin  : full visa access + can manage other visa staff
+# sales       : leads, follow-ups, clients, messaging
+# visa_staff  : applications, documents, checklists, hotels, invoices, payments
+# staff       : legacy role, treated like superadmin for backward compatibility
+ALL_ROLES = ("superadmin", "staff", "sales_admin", "visa_admin", "sales", "visa_staff")
 
 
 # ── Dependency: require admin JWT (any staff role) ────────────────────────────
@@ -52,7 +55,7 @@ def require_admin(creds: HTTPAuthorizationCredentials = Depends(bearer)):
     return payload
 
 
-# ── Dependency: require superadmin (for staff management) ────────────────────
+# ── Dependency: require superadmin (for staff management, cross-staff views) ──
 def require_superadmin(creds: HTTPAuthorizationCredentials = Depends(bearer)):
     if not creds:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -67,13 +70,20 @@ def require_roles(*roles):
     """
     Usage: Depends(require_roles('superadmin', 'visa_staff'))
     superadmin/staff always pass regardless of which roles are listed.
+    sales_admin passes for any sales role. visa_admin passes for any visa role.
     """
     def checker(creds: HTTPAuthorizationCredentials = Depends(bearer)):
         if not creds:
             raise HTTPException(status_code=401, detail="Authentication required")
         payload = decode_token(creds.credentials)
         role = payload.get("role")
+        # Full bypass for superadmin and legacy staff
         if role in ("superadmin", "staff"):
+            return payload
+        # Department admins bypass checks for their own department roles
+        if role == "sales_admin" and any(r in roles for r in ("sales", "sales_admin")):
+            return payload
+        if role == "visa_admin" and any(r in roles for r in ("visa_staff", "visa_admin")):
             return payload
         if role not in roles:
             raise HTTPException(status_code=403, detail=f"Requires one of: {', '.join(roles)}")
