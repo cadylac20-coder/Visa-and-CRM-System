@@ -1316,6 +1316,7 @@ function nav(page) {
   document.querySelectorAll('.nav-item').forEach(btn => {
     if (btn.getAttribute('onclick') === "nav('" + page + "')") btn.classList.add('active');
   });
+  logActivity('view', `Visited page: ${page}`);
   if      (page === 'dashboard')        loadDashboard();
   else if (page === 'applications')     loadApplications();
   else if (page === 'clients')          loadClients();
@@ -3945,11 +3946,7 @@ function logActivity(action, detail) {
 }
 
 // Log page navigation
-const __navOrig = nav;
-function nav(page) {
-  __navOrig(page);
-  logActivity('view', `Visited page: ${page}`);
-}
+const __navOrig = null; // removed - logActivity now called inside main nav()
 
 // ══════════════════════════════════════════════════════════════════════════════
 // STAFF MONITORING — superadmin views all staff activity and last-seen times
