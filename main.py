@@ -60,6 +60,8 @@ class NewApplicationRequest(BaseModel):
     duration_days: Optional[int] = None
     group_size:    int = 1
     checklist_id:  Optional[int] = None
+    client_name:   Optional[str] = None   # used if client doesn't exist yet
+    client_phone:  Optional[str] = None   # used if client doesn't exist yet
 
 class UpdateStatusRequest(BaseModel):
     status:   str
@@ -379,7 +381,22 @@ def admin_get_team_notes(app_id: str, admin=Depends(require_admin)):
 def admin_create_application(data: NewApplicationRequest, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
     client = conn.execute("SELECT * FROM clients WHERE email=?", (data.client_email,)).fetchone()
-    if not client: conn.close(); raise HTTPException(404, "Client not found")
+
+    # Auto-create a minimal client record if one doesn't exist yet
+    if not client:
+        name  = data.client_name or data.client_email.split("@")[0].replace(".", " ").title()
+        phone = data.client_phone or ""
+        # Generate a random temporary password they can reset later
+        import secrets
+        tmp_pw = secrets.token_hex(6)
+        from auth import hash_password as _hp
+        conn.execute(
+            "INSERT INTO clients (name, email, phone, password) VALUES (?,?,?,?)",
+            (name, data.client_email, phone, _hp(tmp_pw))
+        )
+        conn.commit()
+        client = conn.execute("SELECT * FROM clients WHERE email=?", (data.client_email,)).fetchone()
+
     count  = conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
     app_id = f"VIS-{now_ist().year}-{str(count+1).zfill(3)}"
     conn.execute("INSERT INTO applications (app_id, client_id, destination, visa_type, travel_date, checklist_id) VALUES (?,?,?,?,?,?)",
@@ -404,7 +421,7 @@ def admin_create_application(data: NewApplicationRequest, admin=Depends(require_
                    data.destination, data.visa_type,
                    checklist_docs or doc_map.get(data.visa_type, []),
                    channels=["whatsapp", "email"])
-    return {"status": "created", "app_id": app_id}
+    return {"status": "created", "app_id": app_id, "client_name": client["name"]}
 
 @app.post("/admin/application/{app_id}/verify-doc")
 def admin_verify_doc(app_id: str, data: UpdateDocStatusRequest, admin=Depends(require_roles("visa_staff"))):
@@ -419,7 +436,8 @@ def admin_verify_doc(app_id: str, data: UpdateDocStatusRequest, admin=Depends(re
 # --- Checklists & Pricing ──────────────────────────────────────────────────────
 @app.post("/admin/checklist/create")
 def create_checklist(data: CustomChecklistData, admin=Depends(require_roles("visa_staff"))):
-    final_price = data.base_price * (1 - data.discount_percentage / 100)
+    # Service charge is ADDITIVE — final = base + base*(pct/100)
+    final_price = data.base_price * (1 + data.discount_percentage / 100)
     conn = get_db()
     try:
         conn.execute("""INSERT INTO custom_checklists
@@ -433,6 +451,18 @@ def create_checklist(data: CustomChecklistData, admin=Depends(require_roles("vis
         return {"status": "success", "id": new_id}
     except Exception as e:
         conn.close(); raise HTTPException(400, str(e))
+
+
+@app.get("/admin/checklist/{checklist_id}")
+def get_checklist(checklist_id: int, admin=Depends(require_admin)):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM custom_checklists WHERE id=?", (checklist_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(404, "Checklist not found")
+    d = dict(row)
+    d["documents"] = json.loads(d["documents_json"])
+    return {"checklist": d}
 
 @app.get("/admin/checklists")
 def get_all_checklists(admin=Depends(require_admin)):
@@ -2290,3 +2320,59 @@ def get_my_messages(admin=Depends(require_admin)):
     ).fetchone()[0]
     conn.close()
     return {"messages": [dict(r) for r in rows], "unread": unread}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STORAGE MONITORING — check DB size and auto-export if near capacity
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/storage-status")
+def storage_status(admin=Depends(require_admin)):
+    """
+    Returns DB file size in MB and triggers an email export to all superadmins
+    if the database is >= 90% of a configurable max size (default 400MB,
+    which is safe headroom below Render free tier's 500MB disk limit).
+    """
+    import os
+    db_path = os.getenv("DB_PATH", "visa_system.db")
+    max_mb  = float(os.getenv("DB_MAX_MB", "400"))
+
+    try:
+        size_bytes = os.path.getsize(db_path)
+    except FileNotFoundError:
+        size_bytes = 0
+
+    size_mb  = round(size_bytes / (1024 * 1024), 2)
+    used_pct = round((size_mb / max_mb) * 100, 1)
+    near_cap = used_pct >= 90
+
+    if near_cap:
+        # Notify all superadmin accounts by email
+        conn = get_db()
+        admins = conn.execute(
+            "SELECT email, name FROM admin_users WHERE role IN ('superadmin','staff') AND active=1"
+        ).fetchall()
+        conn.close()
+        from notifier import _send_email
+        for a in admins:
+            _send_email(
+                a["email"],
+                "⚠️ MKOV CRM — Database Near Capacity",
+                f"Warning: The CRM database is at {used_pct}% capacity ({size_mb} MB of {max_mb} MB).\n\n"
+                f"Please export your data and contact your system administrator to increase storage.",
+                f"<div style='font-family:Arial;padding:20px'>"
+                f"<h2 style='color:#d6403f'>Storage Warning</h2>"
+                f"<p>The MKOV Visa CRM database is at <strong>{used_pct}% capacity</strong> "
+                f"({size_mb} MB used of {max_mb} MB limit).</p>"
+                f"<p>Please export your data immediately and contact your system administrator.</p>"
+                f"<p>Go to <strong>Export CRM</strong> in the dashboard to download all data.</p></div>",
+                "storage_warning"
+            )
+
+    return {
+        "db_size_mb":   size_mb,
+        "max_mb":       max_mb,
+        "used_percent": used_pct,
+        "near_capacity": near_cap,
+        "status":       "warning" if near_cap else "ok"
+    }
