@@ -358,6 +358,11 @@ tbody tr:hover{background:var(--surface2)}
 
   <!-- Main -->
   <div class="main">
+    <!-- Storage warning banner -->
+    <div id="storage-warning-banner" style="display:none;background:#fff3cd;border-bottom:2px solid var(--gold);color:#856404;padding:8px 24px;font-size:13px;display:none;align-items:center;gap:8px">
+      ⚠️ <span id="storage-warning-text"></span>
+      <button onclick="document.getElementById('storage-warning-banner').style.display='none'" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:16px;color:#856404">×</button>
+    </div>
     <div class="topbar">
       <span class="page-title" id="page-title">Dashboard</span>
       <div class="topbar-actions">
@@ -908,9 +913,22 @@ tbody tr:hover{background:var(--surface2)}
     </div>
     <div class="modal-body">
       <div class="form-grid">
+        <div style="background:var(--surface2);border-left:3px solid var(--teal);padding:10px 14px;border-radius:var(--r);font-size:12px;color:var(--text2);margin-bottom:4px">
+          If this is a new client, fill in their name and phone below. If they already exist, just their email is enough.
+        </div>
         <div class="form-group">
-          <label>Client Email</label>
+          <label>Client Email <span style="color:var(--red)">*</span></label>
           <input type="email" id="na-email" placeholder="client@example.com">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Client Name <span style="color:var(--text3)">(new clients)</span></label>
+            <input type="text" id="na-client-name" placeholder="e.g. Rahul Sharma">
+          </div>
+          <div class="form-group">
+            <label>Phone <span style="color:var(--text3)">(new clients)</span></label>
+            <input type="tel" id="na-client-phone" placeholder="+91 98765 43210">
+          </div>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -1239,6 +1257,7 @@ async function doLogin() {
     startTeamChatPolling();
     logActivity('login', `Logged in as ${data.role}`);
     startMessagePolling();
+    checkStorageStatus();
   } catch(e) {
     document.getElementById('login-error').style.display = 'block';
     document.getElementById('login-error').textContent = 'Invalid email or password';
@@ -1292,8 +1311,15 @@ function api(path, opts={}) {
   return fetch(`${API}${path}`, {
     ...opts,
     headers: {'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`, ...(opts.headers||{})}
-  }).then(r => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  }).then(async r => {
+    if (!r.ok) {
+      let msg = `HTTP ${r.status}`;
+      try {
+        const body = await r.json();
+        if (body.detail) msg = body.detail;
+      } catch(e) {}
+      throw new Error(msg);
+    }
     return r.json();
   });
 }
@@ -1519,7 +1545,7 @@ async function addTeamNote() {
     document.getElementById('team-note-input').value = '';
     toast('Note saved');
     loadTeamNotes(currentAppId);
-  } catch(e) { toast('Error saving note','error'); }
+  } catch(e) { toast(e.message || 'Error saving note','error'); }
 }
 
 async function loadTeamNotes(appId) {
@@ -1553,7 +1579,7 @@ async function submitStatusUpdate() {
     closeModal('status-modal');
     toast('Status updated and client notified');
     viewApp(currentAppId);
-  } catch(e) { toast('Error updating status','error'); }
+  } catch(e) { toast(e.message || 'Error updating status','error'); }
 }
 
 // ── Clients ───────────────────────────────────────────────────────────────────
@@ -1582,26 +1608,30 @@ async function createClient() {
 }
 
 async function createApplication() {
-  const email       = document.getElementById('na-email').value.trim();
-  const destination = document.getElementById('na-destination').value.trim();
-  const visa_type   = document.getElementById('na-visa-type').value;
-  const travel_date = document.getElementById('na-travel-date').value;
-  const group_size  = parseInt(document.getElementById('na-group-size').value) || 1;
-  const checklist_id= document.getElementById('na-checklist-id').value || null;
+  const email        = document.getElementById('na-email').value.trim();
+  const destination  = document.getElementById('na-destination').value.trim();
+  const visa_type    = document.getElementById('na-visa-type').value;
+  const travel_date  = document.getElementById('na-travel-date').value;
+  const group_size   = parseInt(document.getElementById('na-group-size').value) || 1;
+  const checklist_id = document.getElementById('na-checklist-id').value || null;
+  const client_name  = document.getElementById('na-client-name')?.value.trim() || null;
+  const client_phone = document.getElementById('na-client-phone')?.value.trim() || null;
 
-  if (!email || !destination) return toast('Fill required fields','error');
+  if (!email || !destination) return toast('Client email and destination are required','error');
 
   try {
     const data = await api('/admin/application', {
       method:'POST', body: JSON.stringify({
         client_email: email, destination, visa_type, travel_date,
-        group_size, checklist_id: checklist_id ? parseInt(checklist_id) : null
+        group_size, checklist_id: checklist_id ? parseInt(checklist_id) : null,
+        client_name, client_phone
       })
     });
     closeModal('new-app-modal');
-    toast(`Application ${data.app_id} created`);
+    toast(`Application ${data.app_id} created for ${data.client_name}`);
     loadDashboard();
-  } catch(e) { toast('Error: ' + e.message,'error'); }
+    loadApplications();
+  } catch(e) { toast(e.message || 'Error creating application','error'); }
 }
 
 // ── VFS Checklists ────────────────────────────────────────────────────────────
@@ -1648,7 +1678,7 @@ async function saveVFSChecklist() {
     renderChecklists();
     loadChecklistsForSelect();
     toast('Checklist saved');
-  } catch(e) { toast('Error saving checklist','error'); }
+  } catch(e) { toast(e.message || 'Error saving checklist','error'); }
 }
 
 function renderChecklists() {
@@ -1731,7 +1761,7 @@ async function saveChecklist() {
     await loadChecklistsFromServer();
     renderChecklists();
     toast('Checklist saved');
-  } catch(e) { toast('Error saving checklist','error'); }
+  } catch(e) { toast(e.message || 'Error saving checklist','error'); }
 }
 
 async function deleteChecklistFromEditor() {
@@ -1745,7 +1775,7 @@ async function deleteChecklistFromEditor() {
     renderChecklists();
     loadChecklistsForSelect();
     toast('Checklist deleted');
-  } catch(e) { toast('Error deleting checklist','error'); }
+  } catch(e) { toast(e.message || 'Error deleting checklist','error'); }
 }
 
 function loadChecklistsForSelect() {
@@ -1832,7 +1862,7 @@ async function exportSelectedChecklistsPDF() {
     URL.revokeObjectURL(url);
     closeModal('export-checklists-modal');
     toast('PDF downloaded');
-  } catch(e) { toast('Export failed','error'); }
+  } catch(e) { toast(e.message || 'Export failed','error'); }
 }
 
 
@@ -2203,7 +2233,7 @@ async function saveClientEdit(clientId) {
     toast('Client updated');
     loadAllClients();
     loadClientProfile(clientId);
-  } catch(e) { toast('Error updating client','error'); }
+  } catch(e) { toast(e.message || 'Error updating client','error'); }
 }
 
 async function deleteClient(clientId, name) {
@@ -2214,7 +2244,7 @@ async function deleteClient(clientId, name) {
     currentClientId = null;
     document.getElementById('cp-detail-panel').innerHTML = '<div class="card" style="text-align:center;padding:40px;color:var(--text3)"><p>Client deleted.</p></div>';
     loadAllClients();
-  } catch(e) { toast('Error deleting client','error'); }
+  } catch(e) { toast(e.message || 'Error deleting client','error'); }
 }
 
 // ── Passport upload ───────────────────────────────────────────────────────────
@@ -2233,7 +2263,7 @@ async function uploadPassportDirect(clientId, input) {
     toast('Passport uploaded');
     loadClientProfile(clientId);
     loadAllClients();
-  } catch(e) { toast('Upload failed','error'); }
+  } catch(e) { toast(e.message || 'Upload failed','error'); }
 }
 
 // ── View document ─────────────────────────────────────────────────────────────
@@ -2264,7 +2294,7 @@ async function viewDoc(docId) {
       </div>
     `;
     document.body.appendChild(modal);
-  } catch(e) { toast('Document not available','error'); }
+  } catch(e) { toast(e.message || 'Document not available','error'); }
 }
 
 function downloadDoc(b64, filename, ext) {
@@ -2378,7 +2408,7 @@ async function saveFee(clientId) {
     document.getElementById('fee-modal').remove();
     toast(`Service charge set — Final: ₹${result.final_price?.toFixed(0)}`);
     loadClientProfile(clientId);
-  } catch(e) { toast('Error saving fee','error'); }
+  } catch(e) { toast(e.message || 'Error saving fee','error'); }
 }
 
 async function deleteFee(feeId, clientId) {
@@ -2387,7 +2417,7 @@ async function deleteFee(feeId, clientId) {
     await api(`/admin/client-fee/${feeId}`, {method:'DELETE'});
     toast('Fee removed');
     loadClientProfile(clientId);
-  } catch(e) { toast('Error','error'); }
+  } catch(e) { toast(e.message || 'Error','error'); }
 }
 
 // nav() handles client-profile loading above
@@ -2443,7 +2473,7 @@ async function submitAdminDocUpload() {
     closeModal('admin-upload-modal');
     toast(`${docType.replace(/_/g,' ')} uploaded`);
     viewApp(_uploadAppId);
-  } catch(e) { toast('Upload failed','error'); }
+  } catch(e) { toast(e.message || 'Upload failed','error'); }
 }
 
 // ── handleDocAction updated — view if uploaded, verify if uploaded ────────────
@@ -2487,7 +2517,7 @@ async function verifyDoc(appId, docType, docId) {
     });
     toast(`${docType.replace(/_/g,' ')} verified`);
     viewApp(appId);
-  } catch(e) { toast('Error verifying','error'); }
+  } catch(e) { toast(e.message || 'Error verifying','error'); }
 }
 
 // ── In-portal Messaging ───────────────────────────────────────────────────────
@@ -2863,7 +2893,7 @@ async function saveHotel() {
     }
     closeModal('hotel-modal');
     loadHotels();
-  } catch(e) { toast('Error saving hotel','error'); }
+  } catch(e) { toast(e.message || 'Error saving hotel','error'); }
 }
 
 async function deleteHotel(id) {
@@ -2872,7 +2902,7 @@ async function deleteHotel(id) {
     await api(`/admin/hotel/${id}`, {method:'DELETE'});
     toast('Deleted');
     loadHotels();
-  } catch(e) { toast('Error deleting','error'); }
+  } catch(e) { toast(e.message || 'Error deleting','error'); }
 }
 
 async function exportHotelsCRM() {
@@ -2905,7 +2935,7 @@ async function exportHotelsCRM() {
     a.download = `mkov_hotels_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     toast('Hotel CRM exported');
-  } catch(e) { toast('Export failed','error'); }
+  } catch(e) { toast(e.message || 'Export failed','error'); }
 }
 
 // ── Passport OCR — extract details from uploaded scan ─────────────────────────
@@ -3009,7 +3039,7 @@ async function saveExtractedPassport(clientId, modalEl) {
     modalEl.remove();
     toast('Passport details saved to team notes');
     loadClientProfile(clientId);
-  } catch(e) { toast('Save failed','error'); }
+  } catch(e) { toast(e.message || 'Save failed','error'); }
 }
 
 // hotel nav handled in main nav()
@@ -3095,7 +3125,7 @@ async function exportCRM(type) {
     }
 
     toast('Unknown export type','error');
-  } catch(e) { toast('Export failed','error'); }
+  } catch(e) { toast(e.message || 'Export failed','error'); }
 }
 
 function csvBlock(headers, rows) {
@@ -3210,7 +3240,7 @@ async function sendTeamChatMessage() {
   try {
     await api('/admin/team-chat', {method:'POST', body: JSON.stringify({message})});
     pollTeamChat();
-  } catch(e) { toast('Message failed to send','error'); }
+  } catch(e) { toast(e.message || 'Message failed to send','error'); }
 }
 
 async function pollTeamChat() {
@@ -3307,7 +3337,7 @@ async function completeFollowupQuick(id) {
     await api(`/admin/followup/${id}/complete`, {method:'POST'});
     toast('Follow-up marked done');
     loadDueFollowups();
-  } catch(e) { toast('Error','error'); }
+  } catch(e) { toast(e.message || 'Error','error'); }
 }
 
 function openLeadModal() {
@@ -3344,7 +3374,7 @@ async function saveLead() {
     closeModal('lead-modal');
     toast('Lead created');
     loadLeads();
-  } catch(e) { toast('Error creating lead','error'); }
+  } catch(e) { toast(e.message || 'Error creating lead','error'); }
 }
 
 async function openLeadDetail(leadId) {
@@ -3387,7 +3417,7 @@ async function openLeadDetail(leadId) {
       </div>
     `;
     openModal('lead-detail-modal');
-  } catch(e) { toast('Error loading lead','error'); }
+  } catch(e) { toast(e.message || 'Error loading lead','error'); }
 }
 
 async function updateLeadStatus(leadId, status) {
@@ -3395,7 +3425,7 @@ async function updateLeadStatus(leadId, status) {
     await api(`/admin/lead/${leadId}`, {method:'PUT', body: JSON.stringify({status})});
     toast('Status updated');
     loadLeads();
-  } catch(e) { toast('Error','error'); }
+  } catch(e) { toast(e.message || 'Error','error'); }
 }
 
 async function deleteLeadConfirm(leadId) {
@@ -3405,7 +3435,7 @@ async function deleteLeadConfirm(leadId) {
     closeModal('lead-detail-modal');
     toast('Lead deleted');
     loadLeads();
-  } catch(e) { toast('Error','error'); }
+  } catch(e) { toast(e.message || 'Error','error'); }
 }
 
 function openAddFollowup(leadId) {
@@ -3547,7 +3577,7 @@ async function saveCalendarEvent() {
     toast(reminderVal ? 'Event added with reminder' : 'Event added');
     renderCalendarGrid();
     loadCalendarUpcoming();
-  } catch(e) { toast('Error saving event','error'); }
+  } catch(e) { toast(e.message || 'Error saving event','error'); }
 }
 
 function viewCalendarEvent(eventId) {
@@ -3726,7 +3756,7 @@ async function saveInvoice() {
     closeModal('invoice-modal');
     toast(`Invoice ${result.invoice_no} created — ₹${result.total}`);
     loadInvoices();
-  } catch(e) { toast('Error creating invoice','error'); }
+  } catch(e) { toast(e.message || 'Error creating invoice','error'); }
 }
 
 let currentInvoiceId = null;
@@ -3779,7 +3809,7 @@ async function openInvoiceDetail(invoiceId) {
       </div>
     `;
     openModal('invoice-detail-modal');
-  } catch(e) { toast('Error loading invoice','error'); }
+  } catch(e) { toast(e.message || 'Error loading invoice','error'); }
 }
 
 function openPaymentModal(invoiceId) {
@@ -3807,7 +3837,7 @@ async function submitPayment() {
     toast('Payment recorded');
     openInvoiceDetail(currentInvoiceId);
     loadInvoices();
-  } catch(e) { toast('Error recording payment','error'); }
+  } catch(e) { toast(e.message || 'Error recording payment','error'); }
 }
 
 async function deleteInvoiceConfirm(invoiceId) {
@@ -3817,7 +3847,7 @@ async function deleteInvoiceConfirm(invoiceId) {
     closeModal('invoice-detail-modal');
     toast('Invoice deleted');
     loadInvoices();
-  } catch(e) { toast('Error','error'); }
+  } catch(e) { toast(e.message || 'Error','error'); }
 }
 
 async function exportInvoicesCRM() {
@@ -3837,7 +3867,7 @@ async function exportInvoicesCRM() {
     a.download = `mkov_invoices_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     toast('Invoices exported');
-  } catch(e) { toast('Export failed','error'); }
+  } catch(e) { toast(e.message || 'Export failed','error'); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -3920,7 +3950,7 @@ async function saveStaff() {
     }
     closeModal('staff-modal');
     loadStaff();
-  } catch(e) { toast('Error saving staff — email may already exist','error'); }
+  } catch(e) { toast(e.message || 'Error saving staff — email may already exist','error'); }
 }
 
 async function deleteStaffConfirm(id, name) {
@@ -3929,7 +3959,7 @@ async function deleteStaffConfirm(id, name) {
     await api(`/admin/staff/${id}`, {method:'DELETE'});
     toast('Staff removed');
     loadStaff();
-  } catch(e) { toast('Error removing staff','error'); }
+  } catch(e) { toast(e.message || 'Error removing staff','error'); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -4059,7 +4089,7 @@ async function loadDmConversation(staffId) {
       `;
     }).join('');
     conv.scrollTop = conv.scrollHeight;
-  } catch(e) { toast('Error loading messages','error'); }
+  } catch(e) { toast(e.message || 'Error loading messages','error'); }
 }
 
 async function sendDirectMessage() {
@@ -4073,7 +4103,7 @@ async function sendDirectMessage() {
     });
     await loadDmConversation(currentDmStaffId);
     logActivity('message', `Sent message to staff #${currentDmStaffId}`);
-  } catch(e) { toast('Error sending message','error'); }
+  } catch(e) { toast(e.message || 'Error sending message','error'); }
 }
 
 async function sendPing() {
@@ -4087,7 +4117,7 @@ async function sendPing() {
     });
     await loadDmConversation(currentDmStaffId);
     toast('Ping sent');
-  } catch(e) { toast('Error sending ping','error'); }
+  } catch(e) { toast(e.message || 'Error sending ping','error'); }
 }
 
 // ── Message polling for non-superadmin staff (check for pings) ───────────────
@@ -4137,6 +4167,19 @@ async function openMyMessages() {
         ${m.read_at ? '' : '<span style="font-size:10px;background:var(--red);color:white;padding:2px 6px;border-radius:8px;flex-shrink:0">NEW</span>'}
       </div>
     `).join('');
+  } catch(e) {}
+}
+async function checkStorageStatus() {
+  if (!TOKEN) return;
+  try {
+    const data = await api('/admin/storage-status');
+    if (data.near_capacity) {
+      const banner = document.getElementById('storage-warning-banner');
+      document.getElementById('storage-warning-text').textContent =
+        `Database is at ${data.used_percent}% capacity (${data.db_size_mb} MB). ` +
+        `Please export your data. An email alert has been sent to all admins.`;
+      banner.style.display = 'flex';
+    }
   } catch(e) {}
 }
 </script>
