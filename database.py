@@ -5,7 +5,7 @@ No demo/seed data — production ready
 
 import sqlite3
 import os
-import libsql_experimental as libsql
+import libsql
 
 
 def get_db():
