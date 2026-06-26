@@ -9,10 +9,14 @@ import os
 DB_PATH = os.getenv("DB_PATH", "visa_system.db")
 
 
-def get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+import libsql_experimental as libsql
+
+def get_db():
+    conn = libsql.connect(
+        database=os.getenv("TURSO_DATABASE_URL"),
+        auth_token=os.getenv("TURSO_AUTH_TOKEN")
+    )
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
