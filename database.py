@@ -1,18 +1,34 @@
 """
 database.py — Visa System with Turso (libSQL) cloud database
-No demo/seed data — production ready
+Production ready — no demo/seed data except the permanent superadmin account.
+
+Superadmin credentials are set via Render environment variables:
+  SUPERADMIN_EMAIL    (default: admin@uniglobemkov.in)
+  SUPERADMIN_PASS     (default: MkovAdmin@2026)
+  SUPERADMIN_NAME     (default: Admin)
+
+The superadmin account is created on first deploy via INSERT OR IGNORE,
+so changing the password through the UI is permanent — a redeploy will
+NEVER overwrite it because OR IGNORE skips existing rows.
 """
 
 import sqlite3
 import os
-import libsql
+import libsql_experimental as libsql
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def get_db():
-    conn = libsql.connect(
-        database=os.getenv("TURSO_DATABASE_URL"),
-        auth_token=os.getenv("TURSO_AUTH_TOKEN")
-    )
+    url   = os.getenv("TURSO_DATABASE_URL")
+    token = os.getenv("TURSO_AUTH_TOKEN")
+    if not url or not token:
+        raise RuntimeError(
+            "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set in environment. "
+            "See Render → Environment to add them."
+        )
+    conn = libsql.connect(database=url, auth_token=token)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -21,6 +37,7 @@ def init_db():
     conn = get_db()
     c = conn.cursor()
 
+    # ── Admin users ───────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS admin_users (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,6 +50,7 @@ def init_db():
         )
     """)
 
+    # ── Clients ───────────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,6 +64,7 @@ def init_db():
         )
     """)
 
+    # ── Applications ──────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS applications (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +86,7 @@ def init_db():
         )
     """)
 
+    # ── Documents ─────────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS documents (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,6 +102,7 @@ def init_db():
         )
     """)
 
+    # ── Visa requirements (read-only reference) ───────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS visa_requirements (
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,6 +113,7 @@ def init_db():
         )
     """)
 
+    # ── Custom checklists ─────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS custom_checklists (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,12 +126,14 @@ def init_db():
             discount_percentage DECIMAL(5,2) DEFAULT 0,
             final_price         DECIMAL(10,2),
             is_default          INTEGER DEFAULT 0,
-            created_by          INTEGER REFERENCES admin_users(id),
+            created_by          TEXT,
             created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
+    # ── Client service charges (named "discounts" in DB for compatibility) ────
+    # Note: discount_type/discount_value are now ADDITIVE service charges.
     c.execute("""
         CREATE TABLE IF NOT EXISTS client_discounts (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,11 +143,12 @@ def init_db():
             discount_value DECIMAL(10,2),
             reason         TEXT,
             active         INTEGER DEFAULT 1,
-            created_by     INTEGER REFERENCES admin_users(id),
+            created_by     TEXT,
             created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
+    # ── Application activity log ──────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS activity_log (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,6 +160,7 @@ def init_db():
         )
     """)
 
+    # ── Client notifications ──────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS notifications (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,22 +173,24 @@ def init_db():
         )
     """)
 
+    # ── Outbound communication log ────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS communication_log (
-            id             INTEGER PRIMARY KEY AUTOINCREMENT,
-            app_id         TEXT,
-            client_id      INTEGER REFERENCES clients(id),
-            channel        TEXT NOT NULL,
-            phone_number   TEXT,
-            email_address  TEXT,
-            message_type   TEXT,
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id          TEXT,
+            client_id       INTEGER REFERENCES clients(id),
+            channel         TEXT NOT NULL,
+            phone_number    TEXT,
+            email_address   TEXT,
+            message_type    TEXT,
             message_content TEXT,
-            sent_status    TEXT DEFAULT 'pending',
-            response       TEXT,
-            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            sent_status     TEXT DEFAULT 'pending',
+            response        TEXT,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
+    # ── Internal team notes per application ───────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS team_notes (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -173,6 +201,7 @@ def init_db():
         )
     """)
 
+    # ── Webhook / API call log ────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS webhook_log (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,6 +212,7 @@ def init_db():
         )
     """)
 
+    # ── Leads (pre-client inquiries) ──────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS leads (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -202,6 +232,7 @@ def init_db():
         )
     """)
 
+    # ── Lead follow-ups ───────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS lead_followups (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -216,6 +247,7 @@ def init_db():
         )
     """)
 
+    # ── Calendar events ───────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS calendar_events (
             id                      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -239,6 +271,8 @@ def init_db():
         )
     """)
 
+    # ── Invoices ──────────────────────────────────────────────────────────────
+    # "discount" column is an additive service charge (not a price reduction).
     c.execute("""
         CREATE TABLE IF NOT EXISTS invoices (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -261,6 +295,7 @@ def init_db():
         )
     """)
 
+    # ── Invoice payments (partial payments allowed) ───────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS invoice_payments (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -275,6 +310,31 @@ def init_db():
         )
     """)
 
+    # ── Hotel / accommodation CRM ─────────────────────────────────────────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS hotel_records (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id        INTEGER NOT NULL REFERENCES clients(id),
+            app_id           TEXT,
+            hotel_name       TEXT NOT NULL,
+            city             TEXT NOT NULL,
+            country          TEXT NOT NULL,
+            check_in         TEXT NOT NULL,
+            check_out        TEXT NOT NULL,
+            booking_ref      TEXT,
+            booking_status   TEXT DEFAULT 'confirmed',
+            room_type        TEXT,
+            price_per_night  REAL,
+            total_price      REAL,
+            currency         TEXT DEFAULT 'INR',
+            notes            TEXT,
+            is_future        INTEGER DEFAULT 0,
+            created_by       TEXT,
+            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # ── Team chat (global, all staff) ─────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS team_chat_messages (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -286,34 +346,53 @@ def init_db():
         )
     """)
 
+    # ── Staff activity log (superadmin monitoring) ────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS staff_activity_log (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            staff_id    INTEGER REFERENCES admin_users(id),
-            staff_name  TEXT NOT NULL,
-            staff_role  TEXT,
-            action      TEXT NOT NULL,
-            detail      TEXT,
-            ip_address  TEXT,
-            session_id  TEXT,
-            created_at  DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            staff_id   INTEGER REFERENCES admin_users(id),
+            staff_name TEXT NOT NULL,
+            staff_role TEXT,
+            action     TEXT NOT NULL,
+            detail     TEXT,
+            ip_address TEXT,
+            session_id TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
+    # ── Staff direct messages & pings ─────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS staff_direct_messages (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            from_id   INTEGER NOT NULL REFERENCES admin_users(id),
-            from_name TEXT NOT NULL,
-            to_id     INTEGER NOT NULL REFERENCES admin_users(id),
-            to_name   TEXT NOT NULL,
-            message   TEXT NOT NULL,
-            is_ping   INTEGER DEFAULT 0,
-            read_at   DATETIME,
-            created_at DATETIME DEFAULT (datetime('now', '+5 hours', '+30 minutes'))
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_id    INTEGER NOT NULL REFERENCES admin_users(id),
+            from_name  TEXT NOT NULL,
+            to_id      INTEGER NOT NULL REFERENCES admin_users(id),
+            to_name    TEXT NOT NULL,
+            message    TEXT NOT NULL,
+            is_ping    INTEGER DEFAULT 0,
+            read_at    DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # ── PERMANENT SUPERADMIN SEED ─────────────────────────────────────────────
+    # INSERT OR IGNORE means this only runs ONCE (when the account doesn't
+    # exist yet). Subsequent redeploys skip this entirely, so any password
+    # changes made through the UI survive forever.
+    #
+    # Set SUPERADMIN_EMAIL / SUPERADMIN_PASS in Render → Environment.
+    # Defaults are shown below — change them before going live.
+    from auth import hash_password
+    admin_email = os.getenv("SUPERADMIN_EMAIL", "admin@uniglobemkov.in")
+    admin_name  = os.getenv("SUPERADMIN_NAME",  "Admin")
+    admin_pass  = os.getenv("SUPERADMIN_PASS",  "MkovAdmin@2026")
+
+    c.execute("""
+        INSERT OR IGNORE INTO admin_users (email, name, password, role, active)
+        VALUES (?, ?, ?, 'superadmin', 1)
+    """, (admin_email, admin_name, hash_password(admin_pass)))
 
     conn.commit()
     conn.close()
-    print("✓ Visa system DB initialised via Turso")
+    print(f"✓ Visa system DB initialised via Turso (superadmin: {admin_email})")
