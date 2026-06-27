@@ -2329,50 +2329,63 @@ def get_my_messages(admin=Depends(require_admin)):
 @app.get("/admin/storage-status")
 def storage_status(admin=Depends(require_admin)):
     """
-    Returns DB file size in MB and triggers an email export to all superadmins
-    if the database is >= 90% of a configurable max size (default 400MB,
-    which is safe headroom below Render free tier's 500MB disk limit).
+    With Turso, we cannot check the file size directly (DB is remote).
+    Instead we count total rows across key tables as a proxy for usage,
+    and alert superadmins if the total row count exceeds a configurable
+    threshold (default 100,000 rows). Turso free tier allows 9 GB of data
+    which is far more than a visa agency will realistically hit.
     """
-    import os
-    db_path = os.getenv("DB_PATH", "visa_system.db")
-    max_mb  = float(os.getenv("DB_MAX_MB", "400"))
+    conn = get_db()
+    tables = [
+        "clients", "applications", "documents", "communication_log",
+        "invoices", "invoice_payments", "hotel_records", "leads",
+        "lead_followups", "team_chat_messages", "staff_activity_log",
+        "activity_log", "team_notes", "calendar_events"
+    ]
+    total_rows = 0
+    table_counts = {}
+    for table in tables:
+        try:
+            count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            table_counts[table] = count
+            total_rows += count
+        except Exception:
+            table_counts[table] = 0
 
-    try:
-        size_bytes = os.path.getsize(db_path)
-    except FileNotFoundError:
-        size_bytes = 0
+    # Also count document file storage (base64 in DB is largest consumer)
+    doc_size_est = table_counts.get("documents", 0) * 0.5  # rough 0.5 MB per doc avg
+    passport_size_est = table_counts.get("clients", 0) * 1.0  # rough 1 MB per passport
 
-    size_mb  = round(size_bytes / (1024 * 1024), 2)
-    used_pct = round((size_mb / max_mb) * 100, 1)
-    near_cap = used_pct >= 90
+    max_rows  = int(os.getenv("DB_MAX_ROWS", "100000"))
+    used_pct  = round((total_rows / max_rows) * 100, 1) if max_rows else 0
+    near_cap  = used_pct >= 90
 
     if near_cap:
-        # Notify all superadmin accounts by email
-        conn = get_db()
         admins = conn.execute(
             "SELECT email, name FROM admin_users WHERE role IN ('superadmin','staff') AND active=1"
         ).fetchall()
-        conn.close()
         from notifier import _send_email
         for a in admins:
             _send_email(
                 a["email"],
-                "⚠️ MKOV CRM — Database Near Capacity",
-                f"Warning: The CRM database is at {used_pct}% capacity ({size_mb} MB of {max_mb} MB).\n\n"
-                f"Please export your data and contact your system administrator to increase storage.",
+                "Warning: MKOV CRM — Database Near Capacity",
+                f"Warning: The CRM database has {total_rows:,} rows ({used_pct}% of the {max_rows:,} row limit).\n\n"
+                f"Please export your data and contact your system administrator.",
                 f"<div style='font-family:Arial;padding:20px'>"
                 f"<h2 style='color:#d6403f'>Storage Warning</h2>"
-                f"<p>The MKOV Visa CRM database is at <strong>{used_pct}% capacity</strong> "
-                f"({size_mb} MB used of {max_mb} MB limit).</p>"
-                f"<p>Please export your data immediately and contact your system administrator.</p>"
-                f"<p>Go to <strong>Export CRM</strong> in the dashboard to download all data.</p></div>",
+                f"<p>The MKOV Visa CRM database has <strong>{total_rows:,} rows</strong> "
+                f"({used_pct}% of the {max_rows:,} row limit).</p>"
+                f"<p>Key counts: {', '.join(f'{k}: {v}' for k,v in table_counts.items() if v > 0)}</p>"
+                f"<p>Please export your data immediately via the Export CRM page.</p></div>",
                 "storage_warning"
             )
-
+    conn.close()
     return {
-        "db_size_mb":   size_mb,
-        "max_mb":       max_mb,
-        "used_percent": used_pct,
+        "total_rows":    total_rows,
+        "max_rows":      max_rows,
+        "used_percent":  used_pct,
         "near_capacity": near_cap,
-        "status":       "warning" if near_cap else "ok"
+        "table_counts":  table_counts,
+        "estimated_storage_mb": round(doc_size_est + passport_size_est, 1),
+        "status": "warning" if near_cap else "ok"
     }
