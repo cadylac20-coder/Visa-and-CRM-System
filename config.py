@@ -3,12 +3,31 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SECRET_KEY      = os.getenv("SECRET_KEY",      "visa-mkov-secret-change-in-production")
-DB_PATH         = os.getenv("DB_PATH",          "visa_system.db")
-UPLOAD_DIR      = os.getenv("UPLOAD_DIR",       "uploads")
-N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL",  "")
-DEFAULT_ADMIN   = os.getenv("DEFAULT_ADMIN",    "admin@uniglobemkov.in")
-DEFAULT_PASS    = os.getenv("DEFAULT_PASS",     "admin123")
+# ── Authentication ────────────────────────────────────────────────────────────
+SECRET_KEY  = os.getenv("SECRET_KEY", "CHANGE-THIS-BEFORE-GOING-LIVE")
+TOKEN_HOURS = 12
+
+# ── Turso Database ────────────────────────────────────────────────────────────
+# Set these in Render → Environment
+TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL")
+TURSO_AUTH_TOKEN   = os.getenv("TURSO_AUTH_TOKEN")
+
+# ── Superadmin (set in Render → Environment) ──────────────────────────────────
+# These are ONLY used on first deploy to create the account via INSERT OR IGNORE.
+# After that, changing the password in the UI is permanent — redeploy won't reset it.
+SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "admin@uniglobemkov.in")
+SUPERADMIN_NAME  = os.getenv("SUPERADMIN_NAME",  "Admin")
+SUPERADMIN_PASS  = os.getenv("SUPERADMIN_PASS",  "MkovAdmin@2026")
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+GMAIL_ADDRESS      = os.getenv("GMAIL_ADDRESS", "")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
+WHATSAPP_TOKEN     = os.getenv("WHATSAPP_TOKEN", "")
+WHATSAPP_PHONE_ID  = os.getenv("WHATSAPP_PHONE_ID", "")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN  = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_PHONE       = os.getenv("TWILIO_PHONE_NUMBER", "")
+
+# ── App settings ──────────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = ["*"]
-TOKEN_HOURS     = 12
 MAX_FILE_MB     = 10
