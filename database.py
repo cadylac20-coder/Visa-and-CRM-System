@@ -14,7 +14,7 @@ NEVER overwrite it because OR IGNORE skips existing rows.
 
 import sqlite3
 import os
-import libsql_experimental as libsql
+import libsql
 from dotenv import load_dotenv
 
 load_dotenv()
