@@ -1,4 +1,3 @@
-# ── Build stage ───────────────────────────────────────────────────────────────
 FROM python:3.11-slim
 
 # Install system deps for pytesseract + OCR
@@ -19,6 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy all app files
 COPY . .
+
+# Create data directory for SQLite database
+RUN mkdir -p /app/data
 
 # Back4app exposes port 80 by default
 EXPOSE 80
