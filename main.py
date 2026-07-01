@@ -2389,3 +2389,737 @@ def storage_status(admin=Depends(require_admin)):
         "estimated_storage_mb": round(doc_size_est + passport_size_est, 1),
         "status": "warning" if near_cap else "ok"
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INVOICE — GOVERNMENT FEE VS SERVICE FEE SPLIT
+# ══════════════════════════════════════════════════════════════════════════════
+
+class InvoiceSplitRequest(BaseModel):
+    client_id:      int
+    app_id:         Optional[str] = None
+    service_items:  list[InvoiceLineItem]   # agency service fee items
+    govt_items:     list[InvoiceLineItem]   # government/visa fee items (non-refundable)
+    tax_percent:    float = 0
+    due_date:       Optional[str] = None
+    notes:          Optional[str] = ""
+
+class CancelInvoiceRequest(BaseModel):
+    retain_service_fee: bool = True   # if True, only refund govt portion
+
+@app.post("/admin/invoice/split")
+def create_split_invoice(data: InvoiceSplitRequest, admin=Depends(require_roles("visa_staff"))):
+    """Create invoice with separate govt fee and service fee line items."""
+    conn = get_db()
+    client = conn.execute("SELECT id FROM clients WHERE id=?", (data.client_id,)).fetchone()
+    if not client:
+        conn.close(); raise HTTPException(404, "Client not found")
+
+    service_total = sum(i.qty * i.unit_price for i in data.service_items)
+    govt_total    = sum(i.qty * i.unit_price for i in data.govt_items)
+    subtotal      = service_total + govt_total
+    tax_amount    = subtotal * (data.tax_percent / 100)
+    total         = subtotal + tax_amount
+
+    line_items = []
+    for i in data.service_items:
+        line_items.append({"label": i.label, "qty": i.qty, "unit_price": i.unit_price,
+                           "amount": round(i.qty * i.unit_price, 2), "type": "service"})
+    for i in data.govt_items:
+        line_items.append({"label": i.label, "qty": i.qty, "unit_price": i.unit_price,
+                           "amount": round(i.qty * i.unit_price, 2), "type": "govt"})
+
+    count = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
+    invoice_no = f"INV-{now_ist().year}-{str(count+1).zfill(3)}"
+
+    conn.execute("""
+        INSERT INTO invoices
+        (invoice_no, client_id, app_id, line_items_json, subtotal, discount,
+         tax_percent, tax_amount, total, due_date, notes, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (invoice_no, data.client_id, data.app_id, json.dumps(line_items),
+          round(subtotal,2), 0, data.tax_percent, round(tax_amount,2),
+          round(total,2), data.due_date, data.notes, admin["name"]))
+
+    if data.app_id:
+        conn.execute("INSERT INTO activity_log (app_id,actor,action,detail) VALUES (?,?,?,?)",
+                     (data.app_id, f"admin:{admin['name']}", "Invoice created",
+                      f"{invoice_no} — Service: Rs.{service_total:.0f} + Govt: Rs.{govt_total:.0f}"))
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status":"created","id":new_id,"invoice_no":invoice_no,
+            "service_total":service_total,"govt_total":govt_total,"total":total}
+
+@app.post("/admin/invoice/{invoice_id}/cancel")
+def cancel_invoice(invoice_id: int, data: CancelInvoiceRequest, admin=Depends(require_roles("visa_staff"))):
+    """Cancel invoice. If retain_service_fee=True, only govt portion is marked as lost."""
+    conn = get_db()
+    inv = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+    if not inv:
+        conn.close(); raise HTTPException(404, "Invoice not found")
+
+    items = json.loads(inv["line_items_json"])
+    service_total = sum(i["amount"] for i in items if i.get("type") == "service")
+    govt_total    = sum(i["amount"] for i in items if i.get("type") == "govt")
+
+    if data.retain_service_fee:
+        # Only govt fee lost — service fee retained by agency
+        refundable = round(govt_total, 2)
+        note = f"Cancelled — govt fee Rs.{govt_total:.0f} non-refundable; service fee Rs.{service_total:.0f} retained"
+    else:
+        refundable = round(inv["total"], 2)
+        note = "Cancelled — full refund issued"
+
+    conn.execute("UPDATE invoices SET status='cancelled', notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                 (note, invoice_id))
+    if inv["app_id"]:
+        conn.execute("INSERT INTO activity_log (app_id,actor,action,detail) VALUES (?,?,?,?)",
+                     (inv["app_id"], f"admin:{admin['name']}", "Invoice cancelled", note))
+    conn.commit(); conn.close()
+    return {"status":"cancelled","refundable_amount":refundable,"note":note}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DOCUMENT VAULT — client-level persistent storage with OCR auto-extract
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/vault/{client_id}")
+def get_vault(client_id: int, admin=Depends(require_admin)):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id,doc_type,file_name,file_mime,status,extracted_data,uploaded_by,uploaded_at,verified_at,notes "
+        "FROM document_vault WHERE client_id=? ORDER BY uploaded_at DESC", (client_id,)
+    ).fetchall()
+    conn.close()
+    docs = []
+    for r in rows:
+        d = dict(r)
+        d["extracted_data"] = json.loads(d["extracted_data"]) if d["extracted_data"] else {}
+        docs.append(d)
+    return {"documents": docs}
+
+@app.post("/admin/vault/{client_id}/upload")
+async def vault_upload(
+    client_id: int,
+    doc_type: str = Form(...),
+    file: UploadFile = File(...),
+    admin=Depends(require_admin)
+):
+    """Upload a document to the client vault and auto-run OCR if it's a passport."""
+    import base64
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "File too large (max 10 MB)")
+    b64 = base64.b64encode(content).decode()
+    mime = file.content_type or "application/octet-stream"
+
+    extracted = {}
+    if doc_type == "passport":
+        extracted = _run_ocr(content, file.filename or "")
+
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO document_vault (client_id,doc_type,file_name,file_b64,file_mime,
+                                    extracted_data,uploaded_by)
+        VALUES (?,?,?,?,?,?,?)
+    """, (client_id, doc_type, file.filename, b64, mime,
+          json.dumps(extracted), admin["name"]))
+
+    # If passport, push extracted fields to client profile as structured data
+    if doc_type == "passport" and extracted:
+        conn.execute(
+            "UPDATE clients SET passport_b64=?, passport_filename=? WHERE id=?",
+            (b64, file.filename, client_id)
+        )
+
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status":"uploaded","id":new_id,"extracted":extracted}
+
+@app.get("/admin/vault/{client_id}/document/{doc_id}")
+def vault_get_file(client_id: int, doc_id: int, admin=Depends(require_admin)):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM document_vault WHERE id=? AND client_id=?", (doc_id, client_id)
+    ).fetchone()
+    conn.close()
+    if not row: raise HTTPException(404, "Document not found")
+    d = dict(row)
+    d["extracted_data"] = json.loads(d["extracted_data"]) if d["extracted_data"] else {}
+    return d
+
+@app.put("/admin/vault/{client_id}/document/{doc_id}/verify")
+def vault_verify(client_id: int, doc_id: int, admin=Depends(require_admin)):
+    conn = get_db()
+    conn.execute(
+        "UPDATE document_vault SET status='verified', verified_at=CURRENT_TIMESTAMP WHERE id=? AND client_id=?",
+        (doc_id, client_id)
+    )
+    conn.commit(); conn.close()
+    return {"status":"verified"}
+
+@app.delete("/admin/vault/{client_id}/document/{doc_id}")
+def vault_delete(client_id: int, doc_id: int, admin=Depends(require_admin)):
+    conn = get_db()
+    conn.execute("DELETE FROM document_vault WHERE id=? AND client_id=?", (doc_id, client_id))
+    conn.commit(); conn.close()
+    return {"status":"deleted"}
+
+def _run_ocr(content: bytes, filename: str) -> dict:
+    """Run OCR on uploaded file, return structured passport fields."""
+    try:
+        import pytesseract, re
+        from PIL import Image
+        import io
+        if filename.lower().endswith(".pdf"):
+            try:
+                import fitz
+                doc = fitz.open(stream=content, filetype="pdf")
+                pix = doc[0].get_pixmap(dpi=200)
+                content = pix.tobytes("png")
+            except Exception:
+                return {}
+        img  = Image.open(io.BytesIO(content))
+        text = pytesseract.image_to_string(img, lang="eng")
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        mrz   = [l for l in lines if len(l) >= 30 and "<" in l]
+        result = {}
+        if len(mrz) >= 2:
+            m1, m2 = mrz[-2].replace(" ",""), mrz[-1].replace(" ","")
+            name_part = m1[5:44] if len(m1) > 44 else ""
+            if "<<" in name_part:
+                parts = name_part.split("<<")
+                result["surname"]    = parts[0].replace("<"," ").strip()
+                result["given_name"] = parts[1].replace("<"," ").strip() if len(parts)>1 else ""
+                result["full_name"]  = f"{result['given_name']} {result['surname']}".strip()
+            if len(m2) >= 25:
+                result["passport_no"]  = m2[0:9].replace("<","")
+                result["nationality"]  = m2[10:13].replace("<","")
+                result["dob"]          = _fmt_mrz_date(m2[13:19])
+                result["expiry_date"]  = _fmt_mrz_date(m2[19:25])
+                result["sex"]          = m2[20] if len(m2)>20 else ""
+        else:
+            pn = re.findall(r'\b[A-Z]\d{7,8}\b', text)
+            dt = re.findall(r'\b\d{2}[\/\-]\d{2}[\/\-]\d{2,4}\b', text)
+            if pn: result["passport_no"] = pn[0]
+            if dt: result["dob"] = dt[0]
+            if len(dt)>1: result["expiry_date"] = dt[-1]
+        result["raw_text"] = text[:500]
+        return result
+    except ImportError:
+        return {"ocr_unavailable": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LETTER TEMPLATES — cover, authority, invitation, performa
+# ══════════════════════════════════════════════════════════════════════════════
+
+DEFAULT_TEMPLATES = [
+    {
+        "template_type": "cover",
+        "country": None, "visa_type": None,
+        "subject": "Cover Letter for Visa Application",
+        "body_template": """To,
+The Visa Officer
+Consulate General of {{destination}}
+
+Subject: Cover Letter for {{visa_type}} Visa Application
+
+Respected Sir/Madam,
+
+I, {{client_name}}, holder of Passport No. {{passport_no}} (valid till {{expiry_date}}), hereby submit my application for a {{visa_type}} visa to {{destination}}.
+
+I intend to travel from {{travel_date}} and have made all necessary arrangements. All supporting documents are enclosed herewith for your kind perusal.
+
+I assure you that I will abide by all the laws and regulations of {{destination}} during my visit and return to India before the expiry of my visa.
+
+Thanking You,
+Yours Sincerely,
+
+{{client_name}}
+Date: {{today}}
+"""
+    },
+    {
+        "template_type": "authority",
+        "country": None, "visa_type": None,
+        "subject": "Authority Letter",
+        "body_template": """AUTHORITY LETTER
+
+Date: {{today}}
+
+To Whom It May Concern,
+
+I, {{client_name}}, holder of Passport No. {{passport_no}}, hereby authorise Uniglobe MKOV Travel to act on my behalf for the processing of my visa application for {{destination}}.
+
+They are authorised to:
+1. Submit my visa application documents
+2. Collect my passport/visa on my behalf
+3. Communicate with the consulate/embassy on my behalf
+
+This authority letter is valid until {{expiry_date}}.
+
+Signature: ____________________
+Name: {{client_name}}
+Date: {{today}}
+"""
+    },
+    {
+        "template_type": "invitation",
+        "country": None, "visa_type": None,
+        "subject": "Invitation Letter",
+        "body_template": """INVITATION LETTER
+
+Date: {{today}}
+
+To,
+The Visa Officer
+Consulate of {{destination}}
+
+Dear Sir/Madam,
+
+I am writing to invite {{client_name}}, holder of Passport No. {{passport_no}}, nationality Indian, to visit {{destination}} from {{travel_date}}.
+
+The purpose of the visit is {{visa_type}}.
+
+I/We shall be responsible for the applicant's accommodation and other arrangements during the visit.
+
+Sincerely,
+
+[Inviter's Name & Signature]
+[Inviter's Address]
+[Contact Number]
+"""
+    },
+    {
+        "template_type": "performa",
+        "country": None, "visa_type": None,
+        "subject": "Application Performa",
+        "body_template": """VISA APPLICATION PERFORMA
+Uniglobe MKOV Travel — Application Reference: {{app_id}}
+
+PERSONAL DETAILS
+===============================
+Full Name:          {{client_name}}
+Date of Birth:      {{dob}}
+Nationality:        Indian
+Passport No:        {{passport_no}}
+Passport Expiry:    {{expiry_date}}
+Phone:              {{client_phone}}
+Email:              {{client_email}}
+
+TRAVEL DETAILS
+===============================
+Destination:        {{destination}}
+Visa Type:          {{visa_type}}
+Travel Date:        {{travel_date}}
+
+DOCUMENTS CHECKLIST
+===============================
+{{documents_list}}
+
+Staff Member:       ____________________
+Date:               {{today}}
+Agency Stamp:       ____________________
+"""
+    }
+]
+
+class NewLetterTemplateRequest(BaseModel):
+    template_type: str
+    country:       Optional[str] = None
+    visa_type:     Optional[str] = None
+    subject:       str
+    body_template: str
+
+class GenerateLetterRequest(BaseModel):
+    template_id: int
+    client_id:   int
+    app_id:      Optional[str] = None
+
+@app.get("/admin/letter-templates")
+def list_letter_templates(admin=Depends(require_admin)):
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM letter_templates ORDER BY template_type, created_at").fetchall()
+    conn.close()
+    return {"templates": [dict(r) for r in rows]}
+
+@app.post("/admin/letter-templates/seed-defaults")
+def seed_default_templates(admin=Depends(require_superadmin)):
+    """One-time endpoint to load the four default letter templates."""
+    conn = get_db()
+    for t in DEFAULT_TEMPLATES:
+        conn.execute("""
+            INSERT INTO letter_templates (template_type,country,visa_type,subject,body_template,created_by)
+            VALUES (?,?,?,?,?,?)
+        """, (t["template_type"], t["country"], t["visa_type"],
+              t["subject"], t["body_template"], "system"))
+    conn.commit(); conn.close()
+    return {"status":"seeded","count":len(DEFAULT_TEMPLATES)}
+
+@app.post("/admin/letter-templates")
+def create_letter_template(data: NewLetterTemplateRequest, admin=Depends(require_admin)):
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO letter_templates (template_type,country,visa_type,subject,body_template,created_by)
+        VALUES (?,?,?,?,?,?)
+    """, (data.template_type, data.country, data.visa_type,
+          data.subject, data.body_template, admin["name"]))
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status":"created","id":new_id}
+
+@app.post("/admin/letter-templates/generate")
+def generate_letter(data: GenerateLetterRequest, admin=Depends(require_admin)):
+    """Fill a template with real client/application data and return the rendered text."""
+    conn = get_db()
+    template = conn.execute("SELECT * FROM letter_templates WHERE id=?", (data.template_id,)).fetchone()
+    if not template:
+        conn.close(); raise HTTPException(404, "Template not found")
+
+    client = conn.execute("SELECT * FROM clients WHERE id=?", (data.client_id,)).fetchone()
+    if not client:
+        conn.close(); raise HTTPException(404, "Client not found")
+
+    app_row, docs = None, []
+    if data.app_id:
+        app_row = conn.execute("SELECT * FROM applications WHERE app_id=?", (data.app_id,)).fetchone()
+        docs    = conn.execute(
+            "SELECT doc_type FROM documents WHERE app_id=?", (data.app_id,)
+        ).fetchall()
+
+    # Pull OCR data from vault if available
+    vault_passport = conn.execute(
+        "SELECT extracted_data FROM document_vault WHERE client_id=? AND doc_type='passport' ORDER BY uploaded_at DESC LIMIT 1",
+        (data.client_id,)
+    ).fetchone()
+    ocr = json.loads(vault_passport["extracted_data"]) if vault_passport and vault_passport["extracted_data"] else {}
+    conn.close()
+
+    today = now_ist().strftime("%d %B %Y")
+    docs_list = "\n".join(f"[ ] {r['doc_type'].replace('_',' ').title()}" for r in docs) if docs else "[ ] See attached checklist"
+
+    replacements = {
+        "{{client_name}}":   client["name"],
+        "{{client_email}}":  client["email"],
+        "{{client_phone}}":  client["phone"] or "",
+        "{{passport_no}}":   ocr.get("passport_no", "[PASSPORT NO]"),
+        "{{expiry_date}}":   ocr.get("expiry_date", "[EXPIRY DATE]"),
+        "{{dob}}":           ocr.get("dob", "[DATE OF BIRTH]"),
+        "{{destination}}":   app_row["destination"] if app_row else "[DESTINATION]",
+        "{{visa_type}}":     app_row["visa_type"].title() if app_row else "[VISA TYPE]",
+        "{{travel_date}}":   app_row["travel_date"] if app_row else "[TRAVEL DATE]",
+        "{{app_id}}":        data.app_id or "",
+        "{{documents_list}}": docs_list,
+        "{{today}}":         today,
+    }
+
+    body = dict(template)["body_template"]
+    for placeholder, value in replacements.items():
+        body = body.replace(placeholder, str(value) if value else "")
+
+    return {
+        "subject": dict(template)["subject"],
+        "body":    body,
+        "template_type": dict(template)["template_type"]
+    }
+
+@app.put("/admin/letter-templates/{template_id}")
+def update_letter_template(template_id: int, data: NewLetterTemplateRequest, admin=Depends(require_admin)):
+    conn = get_db()
+    conn.execute("""
+        UPDATE letter_templates SET template_type=?,country=?,visa_type=?,
+        subject=?,body_template=? WHERE id=?
+    """, (data.template_type, data.country, data.visa_type,
+          data.subject, data.body_template, template_id))
+    conn.commit(); conn.close()
+    return {"status":"updated"}
+
+@app.delete("/admin/letter-templates/{template_id}")
+def delete_letter_template(template_id: int, admin=Depends(require_admin)):
+    conn = get_db()
+    conn.execute("DELETE FROM letter_templates WHERE id=?", (template_id,))
+    conn.commit(); conn.close()
+    return {"status":"deleted"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PACKAGES ↔ HOTEL CRM BRIDGE
+# ══════════════════════════════════════════════════════════════════════════════
+
+class NewPackageRequest(BaseModel):
+    name:            str
+    country:         str
+    visa_type:       str
+    processing_time: Optional[str] = ""
+    validity:        Optional[str] = ""
+    base_price:      float = 0
+    documents:       list = []
+    notes:           Optional[str] = ""
+    hotel_ids:       list[int] = []   # hotel_record IDs to link
+
+@app.get("/admin/packages")
+def list_packages(admin=Depends(require_admin)):
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM visa_packages ORDER BY country, visa_type").fetchall()
+    packages = []
+    for r in rows:
+        p = dict(r)
+        p["documents"] = json.loads(p["documents_json"] or "[]")
+        hotel_ids = json.loads(p["hotel_ids_json"] or "[]")
+        # Pull linked hotel rates live
+        if hotel_ids:
+            placeholders = ",".join("?" * len(hotel_ids))
+            hotels = conn.execute(
+                f"SELECT hotel_name,city,room_type,price_per_night,total_price,currency,check_in,check_out "
+                f"FROM hotel_records WHERE id IN ({placeholders})", hotel_ids
+            ).fetchall()
+            p["linked_hotels"] = [dict(h) for h in hotels]
+            p["total_hotel_cost"] = sum(h["total_price"] or 0 for h in hotels)
+        else:
+            p["linked_hotels"] = []
+            p["total_hotel_cost"] = 0
+        p["grand_total"] = p["base_price"] + p["total_hotel_cost"]
+        packages.append(p)
+    conn.close()
+    return {"packages": packages}
+
+@app.post("/admin/packages")
+def create_package(data: NewPackageRequest, admin=Depends(require_admin)):
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO visa_packages (name,country,visa_type,processing_time,validity,
+                                   base_price,documents_json,notes,hotel_ids_json,created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+    """, (data.name, data.country, data.visa_type, data.processing_time, data.validity,
+          data.base_price, json.dumps(data.documents), data.notes,
+          json.dumps(data.hotel_ids), admin["name"]))
+    conn.commit()
+    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return {"status":"created","id":new_id}
+
+@app.delete("/admin/packages/{pkg_id}")
+def delete_package(pkg_id: int, admin=Depends(require_admin)):
+    conn = get_db()
+    conn.execute("DELETE FROM visa_packages WHERE id=?", (pkg_id,))
+    conn.commit(); conn.close()
+    return {"status":"deleted"}
+
+@app.post("/admin/packages/{pkg_id}/export-manifest")
+def export_package_manifest(pkg_id: int, admin=Depends(require_admin)):
+    """Return a structured room-night manifest + visa applicant sheet for a package."""
+    conn = get_db()
+    pkg = conn.execute("SELECT * FROM visa_packages WHERE id=?", (pkg_id,)).fetchone()
+    if not pkg:
+        conn.close(); raise HTTPException(404, "Package not found")
+    p = dict(pkg)
+    hotel_ids = json.loads(p["hotel_ids_json"] or "[]")
+    hotels = []
+    if hotel_ids:
+        placeholders = ",".join("?" * len(hotel_ids))
+        hotels = [dict(h) for h in conn.execute(
+            f"SELECT h.*,c.name as client_name,c.phone as client_phone "
+            f"FROM hotel_records h JOIN clients c ON c.id=h.client_id "
+            f"WHERE h.id IN ({placeholders})", hotel_ids
+        ).fetchall()]
+    conn.close()
+    return {
+        "package":       p,
+        "hotel_manifest": hotels,
+        "total_rooms":   len(hotels),
+        "total_nights":  sum(
+            max(0, (datetime.fromisoformat(h["check_out"]) - datetime.fromisoformat(h["check_in"])).days)
+            for h in hotels if h.get("check_in") and h.get("check_out")
+        ),
+        "generated_at":  now_ist_str()
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# APPLICATION MILESTONES + STALL DETECTION → AUTO TEAM CHAT
+# ══════════════════════════════════════════════════════════════════════════════
+
+STATUS_MILESTONES = {
+    "pending":       "Document Collection",
+    "docs_received": "Document Review",
+    "review":        "Under Review",
+    "submitted":     "Embassy Submitted",
+    "approved":      "Approved",
+    "rejected":      "Rejected",
+}
+
+@app.post("/admin/application/{app_id}/milestone")
+def record_milestone(app_id: str, admin=Depends(require_admin)):
+    """Called automatically when application status changes."""
+    conn = get_db()
+    app_row = conn.execute("SELECT status FROM applications WHERE app_id=?", (app_id,)).fetchone()
+    if not app_row:
+        conn.close(); raise HTTPException(404, "Application not found")
+
+    milestone = STATUS_MILESTONES.get(app_row["status"], app_row["status"])
+    # Close any open milestone
+    conn.execute("""
+        UPDATE application_milestones SET exited_at=CURRENT_TIMESTAMP
+        WHERE app_id=? AND exited_at IS NULL
+    """, (app_id,))
+    conn.execute("""
+        INSERT INTO application_milestones (app_id, milestone) VALUES (?,?)
+    """, (app_id, milestone))
+    conn.commit(); conn.close()
+    return {"status":"recorded","milestone":milestone}
+
+@app.get("/admin/applications/stalled")
+def get_stalled_applications(admin=Depends(require_admin)):
+    """
+    Find applications that have been in the same status for >= 4 days
+    and haven't been flagged yet. Also posts an automated team chat message.
+    """
+    conn = get_db()
+    stalled = conn.execute("""
+        SELECT m.app_id, m.milestone, m.entered_at, m.id as milestone_id,
+               a.destination, a.visa_type,
+               c.name as client_name,
+               au.name as assigned_name
+        FROM application_milestones m
+        JOIN applications a ON a.app_id = m.app_id
+        JOIN clients c ON c.id = a.client_id
+        LEFT JOIN admin_users au ON au.id = a.assigned_to
+        WHERE m.exited_at IS NULL
+          AND m.stall_flagged = 0
+          AND CAST((julianday('now') - julianday(m.entered_at)) AS INTEGER) >= m.stall_threshold_days
+          AND a.status NOT IN ('approved','rejected','cancelled')
+    """).fetchall()
+
+    flagged = []
+    for s in stalled:
+        days_stuck = int((datetime.now() - datetime.fromisoformat(s["entered_at"].replace(" ","T"))).total_seconds() / 86400)
+        assigned = s["assigned_name"] or "Unassigned"
+        msg = (
+            f"⚠️ STALL ALERT — {s['app_id']} ({s['client_name']}, "
+            f"{s['destination']} {s['visa_type']}) has been in "
+            f"\"{s['milestone']}\" for {days_stuck} day(s). "
+            f"@{assigned} — what do we need to move this forward?"
+        )
+        # Post to team chat
+        conn.execute("""
+            INSERT INTO team_chat_messages (sender_id, sender_name, sender_role, message)
+            VALUES (0, 'System', 'system', ?)
+        """, (msg,))
+        # Mark as flagged so we don't double-post
+        conn.execute(
+            "UPDATE application_milestones SET stall_flagged=1 WHERE id=?",
+            (s["milestone_id"],)
+        )
+        flagged.append({"app_id":s["app_id"],"days":days_stuck,"milestone":s["milestone"],"message":msg})
+
+    if flagged:
+        conn.commit()
+    conn.close()
+    return {"stalled_count": len(flagged), "flagged": flagged}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ENHANCED LEAD → APPLICATION CONVERSION (auto-attach VFS checklist by country)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/admin/lead/{lead_id}/convert-full")
+def convert_lead_full(lead_id: int, data: ConvertLeadRequest, admin=Depends(require_roles("sales"))):
+    """
+    Full conversion pipeline:
+    1. Create client if not exists
+    2. Create application with correct doc slots
+    3. Auto-attach best matching VFS checklist for that country+visa_type
+    4. Create document upload slots from checklist
+    5. Record milestone
+    """
+    conn = get_db()
+    lead = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
+    if not lead:
+        conn.close(); raise HTTPException(404, "Lead not found")
+    if not lead["email"]:
+        conn.close(); raise HTTPException(400, "Lead needs an email address before converting")
+
+    # 1 — Create client
+    existing = conn.execute("SELECT id FROM clients WHERE email=?", (lead["email"],)).fetchone()
+    if existing:
+        client_id = existing["id"]
+    else:
+        import secrets
+        conn.execute(
+            "INSERT INTO clients (name,email,phone,password) VALUES (?,?,?,?)",
+            (lead["name"], lead["email"], lead["phone"], hash_password(data.password))
+        )
+        client_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    # 2 — Create application
+    count  = conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
+    app_id = f"VIS-{now_ist().year}-{str(count+1).zfill(3)}"
+    destination = lead["destination"] or "TBD"
+    visa_type   = lead["visa_type"] or "tourist"
+
+    # 3 — Find best matching VFS checklist for country+visa_type
+    checklist = conn.execute("""
+        SELECT * FROM custom_checklists
+        WHERE LOWER(country)=LOWER(?) AND LOWER(visa_type)=LOWER(?)
+        ORDER BY is_default DESC, created_at DESC LIMIT 1
+    """, (destination, visa_type)).fetchone()
+    if not checklist:
+        checklist = conn.execute("""
+            SELECT * FROM custom_checklists
+            WHERE LOWER(country)=LOWER(?)
+            ORDER BY is_default DESC, created_at DESC LIMIT 1
+        """, (destination,)).fetchone()
+    checklist_id = checklist["id"] if checklist else None
+
+    conn.execute("""
+        INSERT INTO applications (app_id,client_id,destination,visa_type,status,progress,checklist_id)
+        VALUES (?,?,?,?,?,?,?)
+    """, (app_id, client_id, destination, visa_type, "pending", 10, checklist_id))
+
+    # 4 — Create document upload slots from checklist or default
+    if checklist:
+        docs = json.loads(checklist["documents_json"])
+    else:
+        doc_map = {
+            "tourist":  ["passport","photo","bank_statement","hotel_booking","flight_ticket","travel_insurance"],
+            "business": ["passport","photo","bank_statement","invitation_letter","flight_ticket","company_letter"],
+            "student":  ["passport","photo","bank_statement","admission_letter","flight_ticket"],
+            "transit":  ["passport","photo","onward_ticket"],
+        }
+        docs = doc_map.get(visa_type, ["passport","photo","bank_statement"])
+
+    for dt in docs:
+        doc_type = dt.lower().replace(" ", "_")
+        conn.execute("INSERT INTO documents (app_id,doc_type,status) VALUES (?,?,?)",
+                     (app_id, doc_type, "missing"))
+
+    # 5 — Record milestone
+    conn.execute("INSERT INTO application_milestones (app_id,milestone) VALUES (?,?)",
+                 (app_id, "Document Collection"))
+
+    # 6 — Mark lead as won
+    conn.execute("""
+        UPDATE leads SET status='won', converted_client_id=?, updated_at=CURRENT_TIMESTAMP
+        WHERE id=?
+    """, (client_id, lead_id))
+
+    conn.execute("INSERT INTO activity_log (app_id,actor,action,detail) VALUES (?,?,?,?)",
+                 (app_id, f"admin:{admin['name']}", "Lead converted",
+                  f"From lead #{lead_id} | Checklist: {checklist['name'] if checklist else 'default'}"))
+    conn.commit()
+    conn.close()
+
+    return {
+        "status":        "converted",
+        "client_id":     client_id,
+        "app_id":        app_id,
+        "checklist_id":  checklist_id,
+        "checklist_name": checklist["name"] if checklist else "Default",
+        "doc_slots_created": len(docs)
+    }
