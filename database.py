@@ -1,8 +1,8 @@
 """
-database.py — Visa System with Turso (libSQL) cloud database
+database.py — Visa System with SQLite (local database)
 Production ready — no demo/seed data except the permanent superadmin account.
 
-Superadmin credentials are set via Render environment variables:
+Superadmin credentials are set via environment variables:
   SUPERADMIN_EMAIL    (default: admin@uniglobemkov.in)
   SUPERADMIN_PASS     (default: MkovAdmin@2026)
   SUPERADMIN_NAME     (default: Admin)
@@ -14,21 +14,20 @@ NEVER overwrite it because OR IGNORE skips existing rows.
 
 import sqlite3
 import os
-import libsql_experimental as libsql
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Use SQLite database stored in /app/data (persistent volume)
+DATABASE_PATH = os.getenv("DB_PATH", "/app/data/visa_system.db")
+
+# Ensure data directory exists
+os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
+
 
 def get_db():
-    url   = os.getenv("TURSO_DATABASE_URL")
-    token = os.getenv("TURSO_AUTH_TOKEN")
-    if not url or not token:
-        raise RuntimeError(
-            "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set in environment. "
-            "See Render → Environment to add them."
-        )
-    conn = libsql.connect(database=url, auth_token=token)
+    """Get a connection to the SQLite database."""
+    conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -37,7 +36,7 @@ def init_db():
     conn = get_db()
     c = conn.cursor()
 
-    # ── Admin users ───────────────────────────────────────────────────────────
+    # ── Admin users ─────────────────────────────────────────────────────────[...]
     c.execute("""
         CREATE TABLE IF NOT EXISTS admin_users (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,7 +49,7 @@ def init_db():
         )
     """)
 
-    # ── Clients ───────────────────────────────────────────────────────────────
+    # ── Clients ──────────────────────────────────────────────────────────[...]
     c.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,7 +63,7 @@ def init_db():
         )
     """)
 
-    # ── Applications ──────────────────────────────────────────────────────────
+    # ── Applications ────────────────────────────────────────────────────────[...]
     c.execute("""
         CREATE TABLE IF NOT EXISTS applications (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,7 +85,7 @@ def init_db():
         )
     """)
 
-    # ── Documents ─────────────────────────────────────────────────────────────
+    # ── Documents ────────────────────────────────────────────────────────[...]
     c.execute("""
         CREATE TABLE IF NOT EXISTS documents (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -271,7 +270,7 @@ def init_db():
         )
     """)
 
-    # ── Invoices ──────────────────────────────────────────────────────────────
+    # ── Invoices ─────────────────────────────────────────────────────────[...]
     # "discount" column is an additive service charge (not a price reduction).
     c.execute("""
         CREATE TABLE IF NOT EXISTS invoices (
@@ -376,12 +375,6 @@ def init_db():
         )
     """)
 
-    # ── PERMANENT SUPERADMIN SEED ─────────────────────────────────────────────
-    # INSERT OR IGNORE means this only runs ONCE (when the account doesn't
-    # exist yet). Subsequent redeploys skip this entirely, so any password
-    # changes made through the UI survive forever.
-    #
-    # Set SUPERADMIN_EMAIL / SUPERADMIN_PASS in Render → Environment.
     # ── Document Vault (client-level, persists across all applications) ──────
     c.execute("""
         CREATE TABLE IF NOT EXISTS document_vault (
@@ -446,6 +439,11 @@ def init_db():
     """)
 
     # ── Permanent superadmin seed ─────────────────────────────────────────────
+    # INSERT OR IGNORE means this only runs ONCE (when the account doesn't
+    # exist yet). Subsequent redeploys skip this entirely, so any password
+    # changes made through the UI survive forever.
+    #
+    # Set SUPERADMIN_EMAIL / SUPERADMIN_PASS in environment.
     from auth import hash_password
     admin_email = os.getenv("SUPERADMIN_EMAIL", "admin@uniglobemkov.in")
     admin_name  = os.getenv("SUPERADMIN_NAME",  "Admin")
@@ -458,4 +456,4 @@ def init_db():
 
     conn.commit()
     conn.close()
-    print(f"✓ Visa system DB initialised via Turso (superadmin: {admin_email})")
+    print(f"✓ Visa system DB initialised via SQLite (superadmin: {admin_email})")
