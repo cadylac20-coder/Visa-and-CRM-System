@@ -14,7 +14,7 @@ NEVER overwrite it because OR IGNORE skips existing rows.
 
 import sqlite3
 import os
-import libsql
+import libsql_experimental as libsql
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -382,7 +382,70 @@ def init_db():
     # changes made through the UI survive forever.
     #
     # Set SUPERADMIN_EMAIL / SUPERADMIN_PASS in Render → Environment.
-    # Defaults are shown below — change them before going live.
+    # ── Document Vault (client-level, persists across all applications) ──────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS document_vault (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id      INTEGER NOT NULL REFERENCES clients(id),
+            doc_type       TEXT NOT NULL,
+            file_name      TEXT,
+            file_b64       TEXT,
+            file_mime      TEXT DEFAULT 'application/octet-stream',
+            status         TEXT DEFAULT 'uploaded',
+            extracted_data TEXT,
+            uploaded_by    TEXT,
+            uploaded_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            verified_at    DATETIME,
+            notes          TEXT
+        )
+    """)
+
+    # ── Letter templates ──────────────────────────────────────────────────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS letter_templates (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_type TEXT NOT NULL,
+            country       TEXT,
+            visa_type     TEXT,
+            subject       TEXT,
+            body_template TEXT NOT NULL,
+            created_by    TEXT,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # ── Visa packages (linked to hotel_records for live rates) ────────────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS visa_packages (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            name            TEXT NOT NULL,
+            country         TEXT NOT NULL,
+            visa_type       TEXT NOT NULL,
+            processing_time TEXT,
+            validity        TEXT,
+            base_price      DECIMAL(10,2) DEFAULT 0,
+            documents_json  TEXT,
+            notes           TEXT,
+            hotel_ids_json  TEXT,
+            created_by      TEXT,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # ── Application milestones (stall detection) ──────────────────────────────
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS application_milestones (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id               TEXT NOT NULL REFERENCES applications(app_id),
+            milestone            TEXT NOT NULL,
+            entered_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+            exited_at            DATETIME,
+            stall_flagged        INTEGER DEFAULT 0,
+            stall_threshold_days INTEGER DEFAULT 4
+        )
+    """)
+
+    # ── Permanent superadmin seed ─────────────────────────────────────────────
     from auth import hash_password
     admin_email = os.getenv("SUPERADMIN_EMAIL", "admin@uniglobemkov.in")
     admin_name  = os.getenv("SUPERADMIN_NAME",  "Admin")
