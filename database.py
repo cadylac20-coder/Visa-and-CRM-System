@@ -1,33 +1,36 @@
 """
-database.py — Visa System with SQLite (local database)
-Production ready — no demo/seed data except the permanent superadmin account.
+database.py — Visa System with Turso cloud database
+Uses 'libsql' package (pip install libsql) — the official 2025 replacement
+for libsql-experimental. Same API, new name.
 
-Superadmin credentials are set via environment variables:
-  SUPERADMIN_EMAIL    (default: admin@uniglobemkov.in)
-  SUPERADMIN_PASS     (default: MkovAdmin@2026)
-  SUPERADMIN_NAME     (default: Admin)
+Superadmin credentials set via Render environment variables:
+  SUPERADMIN_EMAIL  (default: admin@uniglobemkov.in)
+  SUPERADMIN_PASS   (default: MkovAdmin@2026)
+  SUPERADMIN_NAME   (default: Admin)
 
-The superadmin account is created on first deploy via INSERT OR IGNORE,
-so changing the password through the UI is permanent — a redeploy will
-NEVER overwrite it because OR IGNORE skips existing rows.
+INSERT OR IGNORE ensures the superadmin is created ONCE on first deploy.
+Password changes made through the UI survive all future redeploys.
 """
 
 import sqlite3
 import os
+import libsql as turso
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Use SQLite database stored in /app/data (persistent volume)
-DATABASE_PATH = os.getenv("DB_PATH", "/app/data/visa_system.db")
-
-# Ensure data directory exists
-os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
-
 
 def get_db():
-    """Get a connection to the SQLite database."""
-    conn = sqlite3.connect(DATABASE_PATH)
+    url   = os.getenv("TURSO_DATABASE_URL", "").strip()
+    token = os.getenv("TURSO_AUTH_TOKEN", "").strip()
+
+    if not url or not token:
+        raise RuntimeError(
+            "TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set in Render "
+            "Environment settings. Go to your service -> Environment to add them."
+        )
+
+    conn = turso.connect(database=url, auth_token=token)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -36,7 +39,7 @@ def init_db():
     conn = get_db()
     c = conn.cursor()
 
-    # ── Admin users ─────────────────────────────────────────────────────────[...]
+    # ── Admin users ───────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS admin_users (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,7 +52,7 @@ def init_db():
         )
     """)
 
-    # ── Clients ──────────────────────────────────────────────────────────[...]
+    # ── Clients ───────────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,7 +66,7 @@ def init_db():
         )
     """)
 
-    # ── Applications ────────────────────────────────────────────────────────[...]
+    # ── Applications ──────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS applications (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,36 +82,36 @@ def init_db():
             assigned_to    INTEGER REFERENCES admin_users(id),
             embassy_ref    TEXT,
             notes          TEXT,
-            checklist_id   INTEGER REFERENCES custom_checklists(id),
+            checklist_id   INTEGER,
             created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
-    # ── Documents ────────────────────────────────────────────────────────[...]
+    # ── Documents (per-application) ───────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS documents (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            app_id       TEXT NOT NULL REFERENCES applications(app_id),
-            doc_type     TEXT NOT NULL,
-            file_name    TEXT,
-            file_path    TEXT,
-            file_url     TEXT,
-            status       TEXT DEFAULT 'missing',
-            uploaded_at  DATETIME,
-            verified_at  DATETIME,
-            notes        TEXT
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id      TEXT NOT NULL REFERENCES applications(app_id),
+            doc_type    TEXT NOT NULL,
+            file_name   TEXT,
+            file_path   TEXT,
+            file_url    TEXT,
+            status      TEXT DEFAULT 'missing',
+            uploaded_at DATETIME,
+            verified_at DATETIME,
+            notes       TEXT
         )
     """)
 
-    # ── Visa requirements (read-only reference) ───────────────────────────────
+    # ── Visa requirements ─────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS visa_requirements (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            country_code     TEXT UNIQUE NOT NULL,
-            country_name     TEXT NOT NULL,
-            visa_types_json  TEXT,
-            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            country_code    TEXT UNIQUE NOT NULL,
+            country_name    TEXT NOT NULL,
+            visa_types_json TEXT,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -121,9 +124,9 @@ def init_db():
             name                TEXT,
             description         TEXT,
             documents_json      TEXT NOT NULL,
-            base_price          DECIMAL(10,2) DEFAULT 0,
-            discount_percentage DECIMAL(5,2) DEFAULT 0,
-            final_price         DECIMAL(10,2),
+            base_price          REAL DEFAULT 0,
+            discount_percentage REAL DEFAULT 0,
+            final_price         REAL,
             is_default          INTEGER DEFAULT 0,
             created_by          TEXT,
             created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -131,15 +134,14 @@ def init_db():
         )
     """)
 
-    # ── Client service charges (named "discounts" in DB for compatibility) ────
-    # Note: discount_type/discount_value are now ADDITIVE service charges.
+    # ── Client service charges ────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS client_discounts (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
             client_id      INTEGER NOT NULL REFERENCES clients(id),
-            checklist_id   INTEGER REFERENCES custom_checklists(id),
+            checklist_id   INTEGER,
             discount_type  TEXT,
-            discount_value DECIMAL(10,2),
+            discount_value REAL,
             reason         TEXT,
             active         INTEGER DEFAULT 1,
             created_by     TEXT,
@@ -147,7 +149,7 @@ def init_db():
         )
     """)
 
-    # ── Application activity log ──────────────────────────────────────────────
+    # ── Activity log (per application) ───────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS activity_log (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -189,7 +191,7 @@ def init_db():
         )
     """)
 
-    # ── Internal team notes per application ───────────────────────────────────
+    # ── Internal team notes ───────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS team_notes (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -200,7 +202,7 @@ def init_db():
         )
     """)
 
-    # ── Webhook / API call log ────────────────────────────────────────────────
+    # ── Webhook / API log ─────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS webhook_log (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,7 +213,7 @@ def init_db():
         )
     """)
 
-    # ── Leads (pre-client inquiries) ──────────────────────────────────────────
+    # ── Leads ─────────────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS leads (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -270,8 +272,7 @@ def init_db():
         )
     """)
 
-    # ── Invoices ─────────────────────────────────────────────────────────[...]
-    # "discount" column is an additive service charge (not a price reduction).
+    # ── Invoices ──────────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS invoices (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -279,12 +280,12 @@ def init_db():
             client_id       INTEGER NOT NULL REFERENCES clients(id),
             app_id          TEXT,
             line_items_json TEXT NOT NULL,
-            subtotal        DECIMAL(10,2) DEFAULT 0,
-            discount        DECIMAL(10,2) DEFAULT 0,
-            tax_percent     DECIMAL(5,2) DEFAULT 0,
-            tax_amount      DECIMAL(10,2) DEFAULT 0,
-            total           DECIMAL(10,2) DEFAULT 0,
-            amount_paid     DECIMAL(10,2) DEFAULT 0,
+            subtotal        REAL DEFAULT 0,
+            discount        REAL DEFAULT 0,
+            tax_percent     REAL DEFAULT 0,
+            tax_amount      REAL DEFAULT 0,
+            total           REAL DEFAULT 0,
+            amount_paid     REAL DEFAULT 0,
             status          TEXT DEFAULT 'unpaid',
             due_date        TEXT,
             notes           TEXT,
@@ -294,12 +295,12 @@ def init_db():
         )
     """)
 
-    # ── Invoice payments (partial payments allowed) ───────────────────────────
+    # ── Invoice payments ──────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS invoice_payments (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             invoice_id  INTEGER NOT NULL REFERENCES invoices(id),
-            amount      DECIMAL(10,2) NOT NULL,
+            amount      REAL NOT NULL,
             method      TEXT DEFAULT 'cash',
             reference   TEXT,
             paid_at     TEXT NOT NULL,
@@ -312,28 +313,28 @@ def init_db():
     # ── Hotel / accommodation CRM ─────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS hotel_records (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            client_id        INTEGER NOT NULL REFERENCES clients(id),
-            app_id           TEXT,
-            hotel_name       TEXT NOT NULL,
-            city             TEXT NOT NULL,
-            country          TEXT NOT NULL,
-            check_in         TEXT NOT NULL,
-            check_out        TEXT NOT NULL,
-            booking_ref      TEXT,
-            booking_status   TEXT DEFAULT 'confirmed',
-            room_type        TEXT,
-            price_per_night  REAL,
-            total_price      REAL,
-            currency         TEXT DEFAULT 'INR',
-            notes            TEXT,
-            is_future        INTEGER DEFAULT 0,
-            created_by       TEXT,
-            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id       INTEGER NOT NULL REFERENCES clients(id),
+            app_id          TEXT,
+            hotel_name      TEXT NOT NULL,
+            city            TEXT NOT NULL,
+            country         TEXT NOT NULL,
+            check_in        TEXT NOT NULL,
+            check_out       TEXT NOT NULL,
+            booking_ref     TEXT,
+            booking_status  TEXT DEFAULT 'confirmed',
+            room_type       TEXT,
+            price_per_night REAL,
+            total_price     REAL,
+            currency        TEXT DEFAULT 'INR',
+            notes           TEXT,
+            is_future       INTEGER DEFAULT 0,
+            created_by      TEXT,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
-    # ── Team chat (global, all staff) ─────────────────────────────────────────
+    # ── Team chat ─────────────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS team_chat_messages (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -345,7 +346,7 @@ def init_db():
         )
     """)
 
-    # ── Staff activity log (superadmin monitoring) ────────────────────────────
+    # ── Staff activity log ────────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS staff_activity_log (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -354,13 +355,12 @@ def init_db():
             staff_role TEXT,
             action     TEXT NOT NULL,
             detail     TEXT,
-            ip_address TEXT,
             session_id TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
-    # ── Staff direct messages & pings ─────────────────────────────────────────
+    # ── Staff direct messages ─────────────────────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS staff_direct_messages (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -375,7 +375,7 @@ def init_db():
         )
     """)
 
-    # ── Document Vault (client-level, persists across all applications) ──────
+    # ── Document vault (client-level persistent storage) ──────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS document_vault (
             id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -407,7 +407,7 @@ def init_db():
         )
     """)
 
-    # ── Visa packages (linked to hotel_records for live rates) ────────────────
+    # ── Visa packages (linked to hotel_records) ────────────────────────────────
     c.execute("""
         CREATE TABLE IF NOT EXISTS visa_packages (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -416,7 +416,7 @@ def init_db():
             visa_type       TEXT NOT NULL,
             processing_time TEXT,
             validity        TEXT,
-            base_price      DECIMAL(10,2) DEFAULT 0,
+            base_price      REAL DEFAULT 0,
             documents_json  TEXT,
             notes           TEXT,
             hotel_ids_json  TEXT,
@@ -438,12 +438,7 @@ def init_db():
         )
     """)
 
-    # ── Permanent superadmin seed ─────────────────────────────────────────────
-    # INSERT OR IGNORE means this only runs ONCE (when the account doesn't
-    # exist yet). Subsequent redeploys skip this entirely, so any password
-    # changes made through the UI survive forever.
-    #
-    # Set SUPERADMIN_EMAIL / SUPERADMIN_PASS in environment.
+    # ── PERMANENT SUPERADMIN — INSERT OR IGNORE so redeploys never reset it ───
     from auth import hash_password
     admin_email = os.getenv("SUPERADMIN_EMAIL", "admin@uniglobemkov.in")
     admin_name  = os.getenv("SUPERADMIN_NAME",  "Admin")
@@ -456,4 +451,4 @@ def init_db():
 
     conn.commit()
     conn.close()
-    print(f"✓ Visa system DB initialised via SQLite (superadmin: {admin_email})")
+    print(f"✓ Turso DB initialised — superadmin: {admin_email}")
