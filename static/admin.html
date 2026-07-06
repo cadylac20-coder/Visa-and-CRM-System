@@ -326,9 +326,9 @@ tbody tr:hover{background:var(--surface2)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
         Client Profile
       </button>
-      <button class="nav-item" data-page="hotels" onclick="nav('hotels')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
-        Hotel CRM
+      <button class="nav-item" data-page="letters" onclick="nav('letters')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M4 4l8 8 8-8"/></svg>
+        Letter Templates
       </button>
       <button class="nav-item" data-page="export" onclick="nav('export')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -563,6 +563,50 @@ tbody tr:hover{background:var(--surface2)}
         <div class="packages-grid" id="packages-grid"></div>
       </div>
 
+      <!-- LETTER TEMPLATES -->
+      <div class="view" id="view-letters">
+        <div class="page-header">
+          <div><h2>Letter Templates</h2><p>Cover letters, authority letters, invitation letters, application performa</p></div>
+          <button class="btn btn-primary btn-sm" onclick="openNewLetterTemplateModal()">+ New Template</button>
+        </div>
+        <div style="display:grid;grid-template-columns:280px 1fr;gap:20px">
+          <div class="card">
+            <div class="card-title">Templates</div>
+            <div id="letter-templates-list"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Generate Letter</div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Client</label>
+                <select id="gen-letter-client" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-size:13px;outline:none">
+                  <option value="">Select client...</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Application (optional)</label>
+                <input type="text" id="gen-letter-app-id" placeholder="VIS-2026-001">
+              </div>
+              <div class="form-group">
+                <label>Template</label>
+                <select id="gen-letter-template" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-size:13px;outline:none">
+                  <option value="">Select template...</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" onclick="generateLetterPreview()">Generate Letter</button>
+            </div>
+            <div id="letter-preview-area" style="margin-top:16px;display:none">
+              <div class="card-title">Preview</div>
+              <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:20px;white-space:pre-wrap;font-family:var(--mono);font-size:12.5px;max-height:400px;overflow-y:auto" id="letter-preview-text"></div>
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <button class="btn btn-ghost btn-sm" onclick="copyLetterText()">Copy Text</button>
+                <button class="btn btn-primary btn-sm" onclick="downloadLetterPdf()">Download as PDF</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- SEND MESSAGE -->
       <div class="view" id="view-messages">
         <div class="page-header">
@@ -639,59 +683,6 @@ tbody tr:hover{background:var(--surface2)}
       </div>
 
       <!-- EXPORT -->
-      <!-- HOTEL CRM -->
-      <div class="view" id="view-hotels">
-        <div class="page-header">
-          <div><h2>Hotel CRM</h2><p>Current and future hotel bookings per client</p></div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost btn-sm" onclick="exportHotelsCRM()">Export to Excel</button>
-            <button class="btn btn-primary btn-sm" onclick="openHotelModal()">+ Add Hotel</button>
-          </div>
-        </div>
-
-        <!-- Filter bar -->
-        <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
-          <input type="text" id="hotel-search" placeholder="Search client, hotel, city..."
-            oninput="filterHotels()"
-            style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 12px;color:var(--text);font-size:13px;outline:none;width:240px">
-          <select id="hotel-status-filter" onchange="filterHotels()"
-            style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;color:var(--text);font-size:13px;outline:none">
-            <option value="">All Statuses</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="tentative">Tentative</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-          <select id="hotel-time-filter" onchange="filterHotels()"
-            style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;color:var(--text);font-size:13px;outline:none">
-            <option value="">All Bookings</option>
-            <option value="current">Current / Past</option>
-            <option value="future">Future Bookings</option>
-          </select>
-        </div>
-
-        <!-- Current bookings -->
-        <div class="card" style="margin-bottom:20px">
-          <div class="card-title">Current &amp; Past Bookings</div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Client</th><th>Hotel</th><th>City</th><th>Check-in</th><th>Check-out</th><th>Ref</th><th>Status</th><th>Price</th><th>Actions</th></tr></thead>
-              <tbody id="hotels-current-table"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Future bookings -->
-        <div class="card">
-          <div class="card-title">Future Bookings</div>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Client</th><th>Hotel</th><th>City</th><th>Check-in</th><th>Check-out</th><th>Ref</th><th>Status</th><th>Price</th><th>Actions</th></tr></thead>
-              <tbody id="hotels-future-table"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
       <!-- LEADS & FOLLOW-UPS -->
       <div class="view" id="view-leads">
         <div class="page-header">
@@ -1135,6 +1126,56 @@ tbody tr:hover{background:var(--surface2)}
   </div>
 </div>
 
+<!-- New/Edit Letter Template Modal -->
+<div class="modal-overlay" id="new-letter-template-modal">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header">
+      <span class="modal-title" id="letter-template-modal-title">New Letter Template</span>
+      <button class="modal-close" onclick="closeModal('new-letter-template-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Template Type</label>
+            <select id="lt-type">
+              <option value="cover">Cover Letter</option>
+              <option value="authority">Authority Letter</option>
+              <option value="invitation">Invitation Letter</option>
+              <option value="performa">Application Performa</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Subject</label>
+            <input type="text" id="lt-subject" placeholder="e.g. Cover Letter for Visa Application">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Country (optional)</label>
+            <input type="text" id="lt-country" placeholder="Leave blank for all countries">
+          </div>
+          <div class="form-group">
+            <label>Visa Type (optional)</label>
+            <input type="text" id="lt-visa-type" placeholder="Leave blank for all types">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Body Template</label>
+          <p style="font-size:11px;color:var(--text3);margin-bottom:6px">
+            Use placeholders: {{client_name}} {{client_email}} {{client_phone}} {{passport_no}} {{dob}} {{expiry_date}} {{destination}} {{visa_type}} {{travel_date}} {{app_id}} {{documents_list}} {{today}}
+          </p>
+          <textarea id="lt-body" style="min-height:280px;font-family:var(--mono);font-size:12px"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('new-letter-template-modal')">Cancel</button>
+      <button class="btn btn-primary" id="lt-save-btn" onclick="saveLetterTemplate()">Save Template</button>
+    </div>
+  </div>
+</div>
+
 <!-- Update Status Modal -->
 <div class="modal-overlay" id="status-modal">
   <div class="modal" style="max-width:420px">
@@ -1283,7 +1324,7 @@ const ROLE_PAGE_ACCESS = {
   packages: ['visa_staff','sales','sales_admin','visa_admin'],
   messages: ['sales','visa_staff','sales_admin','visa_admin'],
   'client-profile': ['sales','visa_staff','sales_admin','visa_admin'],
-  hotels: ['visa_staff','visa_admin'],
+  letters: ['visa_staff','visa_admin'],
   leads: ['sales','sales_admin'],
   calendar: null,              // everyone
   'team-chat': null,           // everyone
@@ -1326,7 +1367,7 @@ function api(path, opts={}) {
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 const PAGE_TITLES = {
-  'client-profile':'Client Profile', hotels:'Hotel CRM', dashboard:'Dashboard', applications:'Applications', clients:'Clients',
+  'client-profile':'Client Profile', letters:'Letter Templates', dashboard:'Dashboard', applications:'Applications', clients:'Clients',
   vfs:'VFS Checklists', packages:'Packages', messages:'Send Message', export:'Export CRM',
   leads:'Leads & Follow-ups', calendar:'Calendar', invoices:'Invoices & Payments', 'staff-management':'Staff & Roles',
   'staff-monitoring':'Staff Monitor',
@@ -1350,7 +1391,7 @@ function nav(page) {
   else if (page === 'packages')         renderPackages();
   else if (page === 'vfs')              { loadChecklistsFromServer().then(renderChecklists); }
   else if (page === 'client-profile')   loadAllClients();
-  else if (page === 'hotels')           { loadHotels(); if (!msgClients.length) loadMsgClients(); }
+  else if (page === 'letters')          loadLetterTemplates();
   else if (page === 'leads')            loadLeads();
   else if (page === 'calendar')         loadCalendar();
   else if (page === 'invoices')         loadInvoices();
@@ -1385,7 +1426,18 @@ async function loadDashboard() {
         <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();viewApp('${a.app_id}')">Open</button></td>
       </tr>
     `).join('');
+
+    checkStalledApplications();
   } catch(e) { console.error(e); }
+}
+
+async function checkStalledApplications() {
+  try {
+    const data = await api('/admin/applications/stalled');
+    if (data.stalled_count > 0) {
+      toast(`Warning: ${data.stalled_count} application(s) flagged as stalling - posted to Team Chat`, 'error');
+    }
+  } catch(e) { /* silent — runs in background, don't disturb the user */ }
 }
 
 // ── Applications ──────────────────────────────────────────────────────────────
@@ -1576,6 +1628,7 @@ async function submitStatusUpdate() {
     await api(`/admin/application/${currentAppId}/status`, {
       method:'POST', body: JSON.stringify({status, note, channels})
     });
+    api(`/admin/application/${currentAppId}/milestone`, {method:'POST'}).catch(()=>{});
     closeModal('status-modal');
     toast('Status updated and client notified');
     viewApp(currentAppId);
@@ -1949,6 +2002,171 @@ function copyPackageText(id) {
   navigator.clipboard.writeText(text).then(() => toast('Package details copied'));
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// LETTER TEMPLATES — cover, authority, invitation, performa
+// ══════════════════════════════════════════════════════════════════════════
+let allLetterTemplates = [];
+let currentLetterPreview = null;
+let editingLetterTemplateId = null;
+
+async function loadLetterTemplates() {
+  try {
+    const data = await api('/admin/letter-templates');
+    allLetterTemplates = data.templates;
+    if (!allLetterTemplates.length) {
+      // First time — seed the 4 defaults automatically
+      try {
+        await api('/admin/letter-templates/seed-defaults', {method:'POST'});
+        const refreshed = await api('/admin/letter-templates');
+        allLetterTemplates = refreshed.templates;
+      } catch(e) { /* not superadmin, or already seeded — ignore */ }
+    }
+    renderLetterTemplatesList();
+    populateLetterTemplateDropdown();
+    populateLetterClientDropdown();
+  } catch(e) { console.error(e); }
+}
+
+function renderLetterTemplatesList() {
+  const typeLabels = {cover:'Cover Letter', authority:'Authority Letter', invitation:'Invitation Letter', performa:'Performa'};
+  const list = document.getElementById('letter-templates-list');
+  if (!allLetterTemplates.length) {
+    list.innerHTML = '<p style="color:var(--text3);font-size:13px">No templates yet.</p>';
+    return;
+  }
+  list.innerHTML = allLetterTemplates.map(t => `
+    <div style="padding:10px 12px;background:var(--surface2);border-radius:var(--r);margin-bottom:8px;border:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:13px;font-weight:600">${typeLabels[t.template_type]||t.template_type}</div>
+          <div style="font-size:11px;color:var(--text3)">${t.country||'All countries'} · ${t.visa_type||'All types'}</div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:11px" onclick="editLetterTemplate(${t.id})">Edit</button>
+          <button class="btn btn-danger btn-sm" style="padding:3px 8px;font-size:11px" onclick="deleteLetterTemplate(${t.id})">Del</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function populateLetterTemplateDropdown() {
+  const typeLabels = {cover:'Cover Letter', authority:'Authority Letter', invitation:'Invitation Letter', performa:'Performa'};
+  const sel = document.getElementById('gen-letter-template');
+  sel.innerHTML = '<option value="">Select template...</option>' +
+    allLetterTemplates.map(t => `<option value="${t.id}">${typeLabels[t.template_type]||t.template_type}${t.country ? ' — '+t.country : ''}</option>`).join('');
+}
+
+async function populateLetterClientDropdown() {
+  try {
+    const data = await api('/admin/clients');
+    const sel = document.getElementById('gen-letter-client');
+    sel.innerHTML = '<option value="">Select client...</option>' +
+      data.clients.map(c => `<option value="${c.id}">${c.name} — ${c.email}</option>`).join('');
+  } catch(e) {}
+}
+
+function openNewLetterTemplateModal() {
+  editingLetterTemplateId = null;
+  document.getElementById('letter-template-modal-title').textContent = 'New Letter Template';
+  document.getElementById('lt-type').value = 'cover';
+  document.getElementById('lt-subject').value = '';
+  document.getElementById('lt-country').value = '';
+  document.getElementById('lt-visa-type').value = '';
+  document.getElementById('lt-body').value = '';
+  openModal('new-letter-template-modal');
+}
+
+function editLetterTemplate(id) {
+  const t = allLetterTemplates.find(x => x.id === id);
+  if (!t) return;
+  editingLetterTemplateId = id;
+  document.getElementById('letter-template-modal-title').textContent = 'Edit Letter Template';
+  document.getElementById('lt-type').value = t.template_type;
+  document.getElementById('lt-subject').value = t.subject || '';
+  document.getElementById('lt-country').value = t.country || '';
+  document.getElementById('lt-visa-type').value = t.visa_type || '';
+  document.getElementById('lt-body').value = t.body_template;
+  openModal('new-letter-template-modal');
+}
+
+async function saveLetterTemplate() {
+  const body = {
+    template_type: document.getElementById('lt-type').value,
+    country:       document.getElementById('lt-country').value.trim() || null,
+    visa_type:     document.getElementById('lt-visa-type').value.trim() || null,
+    subject:       document.getElementById('lt-subject').value.trim(),
+    body_template: document.getElementById('lt-body').value,
+  };
+  if (!body.subject || !body.body_template) return toast('Subject and body are required','error');
+  try {
+    if (editingLetterTemplateId) {
+      await api(`/admin/letter-templates/${editingLetterTemplateId}`, {method:'PUT', body: JSON.stringify(body)});
+      toast('Template updated');
+    } else {
+      await api('/admin/letter-templates', {method:'POST', body: JSON.stringify(body)});
+      toast('Template created');
+    }
+    closeModal('new-letter-template-modal');
+    loadLetterTemplates();
+  } catch(e) { toast(e.message || 'Error saving template','error'); }
+}
+
+async function deleteLetterTemplate(id) {
+  if (!confirm('Delete this letter template?')) return;
+  try {
+    await api(`/admin/letter-templates/${id}`, {method:'DELETE'});
+    toast('Template deleted');
+    loadLetterTemplates();
+  } catch(e) { toast(e.message || 'Error deleting','error'); }
+}
+
+async function generateLetterPreview() {
+  const clientId   = document.getElementById('gen-letter-client').value;
+  const appId      = document.getElementById('gen-letter-app-id').value.trim();
+  const templateId = document.getElementById('gen-letter-template').value;
+  if (!clientId || !templateId) return toast('Select a client and a template','error');
+
+  try {
+    const data = await api('/admin/letter-templates/generate', {
+      method: 'POST',
+      body: JSON.stringify({template_id: parseInt(templateId), client_id: parseInt(clientId), app_id: appId || null})
+    });
+    currentLetterPreview = data;
+    document.getElementById('letter-preview-area').style.display = 'block';
+    document.getElementById('letter-preview-text').textContent = `Subject: ${data.subject}\n\n${data.body}`;
+  } catch(e) { toast(e.message || 'Error generating letter','error'); }
+}
+
+function copyLetterText() {
+  if (!currentLetterPreview) return;
+  navigator.clipboard.writeText(currentLetterPreview.body).then(() => toast('Letter text copied'));
+}
+
+async function downloadLetterPdf() {
+  if (!currentLetterPreview) return toast('Generate a letter first','error');
+  try {
+    const r = await fetch(`${API}/admin/letter-templates/generate-pdf`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
+      body: JSON.stringify({
+        template_id: parseInt(document.getElementById('gen-letter-template').value),
+        client_id: parseInt(document.getElementById('gen-letter-client').value),
+        app_id: document.getElementById('gen-letter-app-id').value.trim() || null
+      })
+    });
+    if (!r.ok) throw new Error('PDF generation failed');
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${currentLetterPreview.template_type}_letter.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('PDF downloaded');
+  } catch(e) { toast(e.message || 'PDF download failed','error'); }
+}
+
 // ── Messaging ─────────────────────────────────────────────────────────────────
 async function fetchAppForMessage(appId) {
   if (appId.length < 10) return;
@@ -2085,30 +2303,15 @@ async function loadClientProfile(clientId) {
         </div>
       </div>
 
-      <!-- Passport -->
+      <!-- Document Vault -->
       <div class="card" style="margin-bottom:16px">
-        <div class="card-title">Passport</div>
-        ${c.passport_filename
-          ? `<div style="display:flex;align-items:center;justify-content:space-between">
-               <div>
-                 <div style="font-size:13px;font-weight:500">📘 ${c.passport_filename}</div>
-                 <div style="font-size:11px;color:var(--green);margin-top:2px">✓ Passport on file</div>
-               </div>
-               <div style="display:flex;gap:8px">
-                 <button class="btn btn-ghost btn-sm" onclick="viewPassport(${c.id})">View</button>
-                 <button class="btn btn-ghost btn-sm" onclick="extractPassportDetails(${c.id})">Extract Details</button>
-                 <button class="btn btn-ghost btn-sm" onclick="document.getElementById('passport-replace-${c.id}').click()">Replace</button>
-                 <input type="file" id="passport-replace-${c.id}" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="uploadPassportDirect(${c.id},this)">
-               </div>
-             </div>`
-          : `<div>
-               <p style="font-size:13px;color:var(--text3);margin-bottom:12px">No passport on file</p>
-               <label class="btn btn-primary btn-sm" style="cursor:pointer">
-                 Upload Passport
-                 <input type="file" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="uploadPassportDirect(${c.id},this)">
-               </label>
-             </div>`
-        }
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div class="card-title" style="margin:0">Document Vault</div>
+          <button class="btn btn-primary btn-sm" onclick="openVaultUploadPicker(${c.id})">+ Upload Document</button>
+        </div>
+        <div id="vault-list-${c.id}" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+          <p style="color:var(--text3);font-size:13px;grid-column:1/-1">Loading vault...</p>
+        </div>
       </div>
 
       <!-- Service Charge -->
@@ -2186,10 +2389,213 @@ async function loadClientProfile(clientId) {
           </div>` : '<p style="font-size:13px;color:var(--text3)">No documents uploaded yet.</p>'}
       </div>
     `;
+    loadVaultForClient(c.id);
   } catch(e) {
     panel.innerHTML = '<div class="card"><p style="color:var(--red)">Failed to load client profile.</p></div>';
     console.error(e);
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// DOCUMENT VAULT — client-level persistent documents with OCR auto-extract
+// ══════════════════════════════════════════════════════════════════════════
+const VAULT_DOC_TYPES = [
+  {value:'passport', label:'Passport'},
+  {value:'photo', label:'Photograph'},
+  {value:'bank_statement', label:'Bank Statement'},
+  {value:'pan_card', label:'PAN Card'},
+  {value:'aadhaar', label:'Aadhaar Card'},
+  {value:'employment_letter', label:'Employment Letter'},
+  {value:'invitation_letter', label:'Invitation Letter'},
+  {value:'itr', label:'ITR / Tax Returns'},
+  {value:'other', label:'Other'},
+];
+
+async function loadVaultForClient(clientId) {
+  const list = document.getElementById(`vault-list-${clientId}`);
+  if (!list) return;
+  try {
+    const data = await api(`/admin/vault/${clientId}`);
+    renderVaultList(clientId, data.documents);
+  } catch(e) {
+    list.innerHTML = '<p style="color:var(--red);font-size:12px;grid-column:1/-1">Could not load vault.</p>';
+  }
+}
+
+function renderVaultList(clientId, docs) {
+  const list = document.getElementById(`vault-list-${clientId}`);
+  if (!list) return;
+  if (!docs.length) {
+    list.innerHTML = '<p style="color:var(--text3);font-size:13px;grid-column:1/-1">No documents in vault yet.</p>';
+    return;
+  }
+  list.innerHTML = docs.map(d => {
+    const typeLabel = (VAULT_DOC_TYPES.find(t => t.value === d.doc_type) || {label: d.doc_type}).label;
+    const hasOcr = d.extracted_data && Object.keys(d.extracted_data).length > 0 && !d.extracted_data.error && !d.extracted_data.ocr_unavailable;
+    return `
+      <div style="background:var(--surface2);border:1px solid ${d.status==='verified'?'var(--green)':'var(--border)'};border-radius:var(--r2);padding:12px;text-align:center;position:relative">
+        <div style="position:absolute;top:6px;right:6px;font-size:10px;padding:1px 6px;border-radius:8px;background:${d.status==='verified'?'var(--green)':'var(--gold)'};color:#000">${d.status}</div>
+        <div style="font-size:24px;margin-bottom:6px">${d.doc_type==='passport'?'📘':d.doc_type==='photo'?'📷':'📄'}</div>
+        <div style="font-size:11.5px;font-weight:600">${typeLabel}</div>
+        <div style="font-size:10px;color:var(--text3);margin:4px 0">${d.uploaded_at?.split('T')[0]||''}</div>
+        ${hasOcr ? `<div style="font-size:9.5px;color:var(--green);margin-bottom:6px">✓ OCR extracted</div>` : ''}
+        <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:11px" onclick="viewVaultDoc(${clientId},${d.id})">View</button>
+          ${d.status!=='verified' ? `<button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:11px" onclick="verifyVaultDoc(${clientId},${d.id})">Verify</button>` : ''}
+          <button class="btn btn-danger btn-sm" style="padding:3px 8px;font-size:11px" onclick="deleteVaultDoc(${clientId},${d.id})">Del</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openVaultUploadPicker(clientId) {
+  // Ask which document type first, then open file picker
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay show';
+  modal.id = 'vault-type-modal';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:380px">
+      <div class="modal-header">
+        <span class="modal-title">Upload to Vault</span>
+        <button class="modal-close" onclick="document.getElementById('vault-type-modal').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Document Type</label>
+          <select id="vault-type-select">
+            ${VAULT_DOC_TYPES.map(t => `<option value="${t.value}">${t.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin-top:12px">
+          <label>File</label>
+          <input type="file" id="vault-actual-file" accept=".pdf,.jpg,.jpeg,.png">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="document.getElementById('vault-type-modal').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitVaultUpload(${clientId})">Upload</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function submitVaultUpload(clientId) {
+  const docType = document.getElementById('vault-type-select').value;
+  const fileInput = document.getElementById('vault-actual-file');
+  const file = fileInput.files[0];
+  if (!file) return toast('Select a file first','error');
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('doc_type', docType);
+
+  try {
+    const r = await fetch(`${API}/admin/vault/${clientId}/upload`, {
+      method: 'POST',
+      headers: {'Authorization': `Bearer ${TOKEN}`},
+      body: formData
+    });
+    if (!r.ok) throw new Error('Upload failed');
+    const result = await r.json();
+    document.getElementById('vault-type-modal').remove();
+
+    if (docType === 'passport' && result.extracted && Object.keys(result.extracted).length) {
+      if (result.extracted.ocr_unavailable) {
+        toast('Uploaded — OCR not configured on server','error');
+      } else if (result.extracted.error) {
+        toast('Uploaded — OCR could not read the image clearly','error');
+      } else {
+        showOcrConfirmation(clientId, result.extracted);
+      }
+    } else {
+      toast('Document uploaded to vault');
+    }
+    loadVaultForClient(clientId);
+  } catch(e) { toast(e.message || 'Upload failed','error'); }
+}
+
+function showOcrConfirmation(clientId, extracted) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay show';
+  modal.style.zIndex = '200';
+  modal.innerHTML = `
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <span class="modal-title">Passport Details Extracted</span>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:var(--surface2);border-left:3px solid var(--teal);padding:10px 14px;border-radius:var(--r);font-size:12px;color:var(--text2);margin-bottom:14px">
+          These fields were automatically read from the passport scan via OCR.
+        </div>
+        <div style="display:grid;gap:8px;font-size:13px">
+          ${extracted.full_name ? infoRow('Name', extracted.full_name) : ''}
+          ${extracted.passport_no ? infoRow('Passport No.', extracted.passport_no) : ''}
+          ${extracted.dob ? infoRow('Date of Birth', extracted.dob) : ''}
+          ${extracted.expiry_date ? infoRow('Expiry Date', extracted.expiry_date) : ''}
+          ${extracted.nationality ? infoRow('Nationality', extracted.nationality) : ''}
+        </div>
+        ${!extracted.passport_no && !extracted.full_name ? '<p style="color:var(--text3);font-size:12px;margin-top:10px">Could not read structured fields clearly — the raw scan is saved, but please verify manually.</p>' : ''}
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="this.closest('.modal-overlay').remove()">Got it</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function viewVaultDoc(clientId, docId) {
+  try {
+    const data = await api(`/admin/vault/${clientId}/document/${docId}`);
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay show';
+    modal.style.zIndex = '200';
+    const ext = (data.file_name||'').split('.').pop().toLowerCase();
+    const isPdf = ext === 'pdf';
+    modal.innerHTML = `
+      <div class="modal" style="max-width:640px">
+        <div class="modal-header">
+          <span class="modal-title">${data.doc_type.replace(/_/g,' ')} — ${data.file_name||''}</span>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+        </div>
+        <div class="modal-body" style="text-align:center">
+          ${isPdf
+            ? `<iframe src="data:application/pdf;base64,${data.file_b64}" style="width:100%;height:440px;border:none"></iframe>`
+            : `<img src="data:image/${ext==='jpg'?'jpeg':ext};base64,${data.file_b64}" style="max-width:100%;border-radius:var(--r)">`}
+          ${data.extracted_data && Object.keys(data.extracted_data).length && data.extracted_data.passport_no ? `
+            <div style="text-align:left;background:var(--surface2);border-radius:var(--r);padding:12px;margin-top:12px;font-size:12px">
+              <strong>OCR Extracted:</strong><br>
+              ${data.extracted_data.full_name ? `Name: ${data.extracted_data.full_name}<br>` : ''}
+              ${data.extracted_data.passport_no ? `Passport: ${data.extracted_data.passport_no}<br>` : ''}
+              ${data.extracted_data.dob ? `DOB: ${data.extracted_data.dob}<br>` : ''}
+              ${data.extracted_data.expiry_date ? `Expiry: ${data.extracted_data.expiry_date}` : ''}
+            </div>` : ''}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Close</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+  } catch(e) { toast('Could not load document','error'); }
+}
+
+async function verifyVaultDoc(clientId, docId) {
+  try {
+    await api(`/admin/vault/${clientId}/document/${docId}/verify`, {method:'PUT'});
+    toast('Document verified');
+    loadVaultForClient(clientId);
+  } catch(e) { toast(e.message || 'Error verifying','error'); }
+}
+
+async function deleteVaultDoc(clientId, docId) {
+  if (!confirm('Delete this document from the vault?')) return;
+  try {
+    await api(`/admin/vault/${clientId}/document/${docId}`, {method:'DELETE'});
+    toast('Document deleted');
+    loadVaultForClient(clientId);
+  } catch(e) { toast(e.message || 'Error deleting','error'); }
 }
 
 // ── Edit client modal ─────────────────────────────────────────────────────────
@@ -2731,213 +3137,6 @@ async function loadClients() {
   } catch(e) { console.error(e); }
 }
 
-
-// ── Hotel CRM ─────────────────────────────────────────────────────────────────
-let allHotels = { current: [], future: [] };
-let editingHotelId = null;
-
-async function loadHotels() {
-  try {
-    const data = await api('/admin/hotels/export/all');
-    allHotels.current = data.hotels.filter(h => !h.is_future);
-    allHotels.future  = data.hotels.filter(h =>  h.is_future);
-    renderHotelTables(allHotels.current, allHotels.future);
-  } catch(e) { console.error('Hotel load error:', e); }
-}
-
-function filterHotels() {
-  const q      = (document.getElementById('hotel-search')?.value || '').toLowerCase();
-  const status = document.getElementById('hotel-status-filter')?.value || '';
-  const time   = document.getElementById('hotel-time-filter')?.value || '';
-
-  function match(h) {
-    const txt = `${h.client_name} ${h.hotel_name} ${h.city} ${h.booking_ref || ''}`.toLowerCase();
-    if (q && !txt.includes(q)) return false;
-    if (status && h.booking_status !== status) return false;
-    return true;
-  }
-
-  let cur = allHotels.current.filter(match);
-  let fut = allHotels.future.filter(match);
-
-  if (time === 'current') fut = [];
-  if (time === 'future')  cur = [];
-
-  renderHotelTables(cur, fut);
-}
-
-function renderHotelTables(current, future) {
-  document.getElementById('hotels-current-table').innerHTML =
-    current.length ? current.map(h => hotelRow(h)).join('') :
-    '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:20px">No current bookings</td></tr>';
-
-  document.getElementById('hotels-future-table').innerHTML =
-    future.length ? future.map(h => hotelRow(h)).join('') :
-    '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:20px">No future bookings yet</td></tr>';
-}
-
-function hotelRow(h) {
-  const statusColor = {confirmed:'var(--green)', tentative:'var(--gold)', cancelled:'var(--red)'}[h.booking_status] || 'var(--text3)';
-  const price = h.total_price ? `₹${Number(h.total_price).toLocaleString('en-IN')}` : (h.price_per_night ? `₹${h.price_per_night}/night` : '—');
-  return `
-    <tr>
-      <td><strong>${h.client_name}</strong><div style="font-size:11px;color:var(--text3)">${h.client_phone || h.client_email}</div></td>
-      <td>${h.hotel_name}<div style="font-size:11px;color:var(--text3)">${h.room_type || ''}</div></td>
-      <td>${h.city}, ${h.country}</td>
-      <td style="font-family:var(--mono);font-size:12px">${h.check_in}</td>
-      <td style="font-family:var(--mono);font-size:12px">${h.check_out}</td>
-      <td style="font-size:12px;color:var(--text3)">${h.booking_ref || '—'}</td>
-      <td><span style="color:${statusColor};font-size:12px;font-weight:600;text-transform:capitalize">${h.booking_status}</span></td>
-      <td style="font-size:13px;font-weight:600">${price}</td>
-      <td>
-        <button class="btn btn-ghost btn-sm" onclick="editHotel(${h.id})">Edit</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteHotel(${h.id})">Del</button>
-      </td>
-    </tr>`;
-}
-
-function openHotelModal(clientId) {
-  editingHotelId = null;
-  document.getElementById('hotel-modal-title').textContent = 'Add Hotel Booking';
-  // Clear form
-  ['hotel-name','hotel-city','hotel-country','hotel-ref','hotel-room','hotel-ppn','hotel-total','hotel-notes','hotel-app-id'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  document.getElementById('hotel-checkin').value  = '';
-  document.getElementById('hotel-checkout').value = '';
-  document.getElementById('hotel-status').value   = 'confirmed';
-  document.querySelector('input[name="hotel-type"][value="0"]').checked = true;
-  // Populate client dropdown
-  populateHotelClientDropdown(clientId);
-  openModal('hotel-modal');
-}
-
-function editHotel(id) {
-  const all = [...allHotels.current, ...allHotels.future];
-  const h   = all.find(h => h.id === id);
-  if (!h) return;
-  editingHotelId = id;
-  document.getElementById('hotel-modal-title').textContent = 'Edit Hotel Booking';
-  populateHotelClientDropdown(h.client_id);
-  document.getElementById('hotel-client-id').value = h.client_id;
-  document.getElementById('hotel-app-id').value    = h.app_id || '';
-  document.getElementById('hotel-name').value      = h.hotel_name;
-  document.getElementById('hotel-city').value      = h.city;
-  document.getElementById('hotel-country').value   = h.country;
-  document.getElementById('hotel-checkin').value   = h.check_in;
-  document.getElementById('hotel-checkout').value  = h.check_out;
-  document.getElementById('hotel-ref').value       = h.booking_ref || '';
-  document.getElementById('hotel-room').value      = h.room_type || '';
-  document.getElementById('hotel-ppn').value       = h.price_per_night || '';
-  document.getElementById('hotel-total').value     = h.total_price || '';
-  document.getElementById('hotel-notes').value     = h.notes || '';
-  document.getElementById('hotel-status').value    = h.booking_status;
-  document.querySelector(`input[name="hotel-type"][value="${h.is_future}"]`).checked = true;
-  openModal('hotel-modal');
-}
-
-function populateHotelClientDropdown(selectedId) {
-  const sel = document.getElementById('hotel-client-id');
-  sel.innerHTML = '<option value="">Select client...</option>' +
-    msgClients.map(c => `<option value="${c.id}" ${c.id == selectedId ? 'selected' : ''}>${c.name} — ${c.email}</option>`).join('');
-}
-
-function calcHotelTotal() {
-  const ppn    = parseFloat(document.getElementById('hotel-ppn').value) || 0;
-  const cin    = document.getElementById('hotel-checkin').value;
-  const cout   = document.getElementById('hotel-checkout').value;
-  if (ppn && cin && cout) {
-    const nights = Math.ceil((new Date(cout) - new Date(cin)) / 86400000);
-    if (nights > 0) document.getElementById('hotel-total').value = (ppn * nights).toFixed(0);
-  }
-}
-
-async function saveHotel() {
-  const clientId = document.getElementById('hotel-client-id').value;
-  const name     = document.getElementById('hotel-name').value.trim();
-  const city     = document.getElementById('hotel-city').value.trim();
-  const country  = document.getElementById('hotel-country').value.trim();
-  const checkIn  = document.getElementById('hotel-checkin').value;
-  const checkOut = document.getElementById('hotel-checkout').value;
-
-  if (!clientId || !name || !city || !checkIn || !checkOut) {
-    return toast('Fill client, hotel name, city and dates','error');
-  }
-
-  const payload = {
-    client_id:       parseInt(clientId),
-    app_id:          document.getElementById('hotel-app-id').value.trim() || null,
-    hotel_name:      name,
-    city,
-    country:         country || city,
-    check_in:        checkIn,
-    check_out:       checkOut,
-    booking_ref:     document.getElementById('hotel-ref').value.trim(),
-    booking_status:  document.getElementById('hotel-status').value,
-    room_type:       document.getElementById('hotel-room').value.trim(),
-    price_per_night: parseFloat(document.getElementById('hotel-ppn').value) || null,
-    total_price:     parseFloat(document.getElementById('hotel-total').value) || null,
-    currency:        'INR',
-    notes:           document.getElementById('hotel-notes').value.trim(),
-    is_future:       parseInt(document.querySelector('input[name="hotel-type"]:checked').value),
-  };
-
-  try {
-    if (editingHotelId) {
-      await api(`/admin/hotel/${editingHotelId}`, {method:'PUT', body: JSON.stringify(payload)});
-      toast('Hotel booking updated');
-    } else {
-      await api('/admin/hotel', {method:'POST', body: JSON.stringify(payload)});
-      toast('Hotel booking added');
-    }
-    closeModal('hotel-modal');
-    loadHotels();
-  } catch(e) { toast(e.message || 'Error saving hotel','error'); }
-}
-
-async function deleteHotel(id) {
-  if (!confirm('Delete this hotel booking?')) return;
-  try {
-    await api(`/admin/hotel/${id}`, {method:'DELETE'});
-    toast('Deleted');
-    loadHotels();
-  } catch(e) { toast(e.message || 'Error deleting','error'); }
-}
-
-async function exportHotelsCRM() {
-  try {
-    const data = await api('/admin/hotels/export/all');
-    const hotels = data.hotels;
-    if (!hotels.length) return toast('No hotel records to export','error');
-
-    const headers = ['Client','Email','Phone','Hotel','City','Country','Check-in','Check-out','Nights','Room','Ref','Status','Price/Night','Total (INR)','Type','Notes'];
-    const rows = hotels.map(h => {
-      const nights = h.check_in && h.check_out
-        ? Math.ceil((new Date(h.check_out) - new Date(h.check_in)) / 86400000)
-        : '';
-      return [
-        h.client_name, h.client_email, h.client_phone || '',
-        h.hotel_name, h.city, h.country,
-        h.check_in, h.check_out, nights,
-        h.room_type || '', h.booking_ref || '',
-        h.booking_status,
-        h.price_per_night || '', h.total_price || '',
-        h.is_future ? 'Future' : 'Current/Past',
-        h.notes || ''
-      ];
-    });
-
-    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], {type:'text/csv'});
-    const a    = document.createElement('a');
-    a.href     = URL.createObjectURL(blob);
-    a.download = `mkov_hotels_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    toast('Hotel CRM exported');
-  } catch(e) { toast(e.message || 'Export failed','error'); }
-}
-
 // ── Passport OCR — extract details from uploaded scan ─────────────────────────
 async function extractPassportDetails(clientId) {
   const btn = document.getElementById(`ocr-btn-${clientId}`);
@@ -3042,7 +3241,7 @@ async function saveExtractedPassport(clientId, modalEl) {
   } catch(e) { toast(e.message || 'Save failed','error'); }
 }
 
-// hotel nav handled in main nav()
+// letters nav handled in main nav()
 
 // ── Add "Extract Details" button to passport section in client profile ────────
 // Patch loadClientProfile to inject OCR button
@@ -3452,12 +3651,12 @@ function openAddFollowup(leadId) {
 function openConvertModal(leadId) {
   const password = prompt('Set a client portal password for this new client:');
   if (!password) return;
-  api(`/admin/lead/${leadId}/convert`, {method:'POST', body: JSON.stringify({password})})
+  api(`/admin/lead/${leadId}/convert-full`, {method:'POST', body: JSON.stringify({password})})
     .then(data => {
-      toast(`Converted! New application: ${data.app_id}`);
+      toast(`Converted! ${data.app_id} — checklist "${data.checklist_name}" attached with ${data.doc_slots_created} document slots`);
       closeModal('lead-detail-modal');
       loadLeads();
-    }).catch(e => toast('Error converting lead','error'));
+    }).catch(e => toast(e.message || 'Error converting lead','error'));
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -3673,14 +3872,15 @@ function invoiceStatusClass(status) {
 }
 
 function openInvoiceModal() {
-  document.getElementById('inv-discount').value = 0;
   document.getElementById('inv-tax').value = 0;
   document.getElementById('inv-app-id').value = '';
   document.getElementById('inv-due-date').value = '';
   document.getElementById('inv-notes').value = '';
-  document.getElementById('invoice-line-items').innerHTML = '';
+  document.getElementById('invoice-govt-items').innerHTML = '';
+  document.getElementById('invoice-service-items').innerHTML = '';
   invoiceLineItemCount = 0;
-  addInvoiceLineItem();
+  addInvoiceLineItem('govt');
+  addInvoiceLineItem('service');
   populateInvoiceClientDropdown();
   openModal('invoice-modal');
 }
@@ -3693,23 +3893,26 @@ function populateInvoiceClientDropdown() {
   }).catch(() => {});
 }
 
-function addInvoiceLineItem(label, qty, price) {
+function addInvoiceLineItem(kind, label, qty, price) {
   const idx = invoiceLineItemCount++;
+  const containerId = kind === 'govt' ? 'invoice-govt-items' : 'invoice-service-items';
   const div = document.createElement('div');
   div.className = 'checklist-item';
   div.id = `li-${idx}`;
+  div.dataset.kind = kind;
+  const placeholder = kind === 'govt' ? 'e.g. Embassy visa fee, VFS service fee' : 'e.g. Agency processing fee, Consultation';
   div.innerHTML = `
-    <input type="text" placeholder="Description" id="li-label-${idx}" value="${label||''}" style="flex:2" oninput="recalcInvoiceTotal()">
+    <input type="text" placeholder="${placeholder}" id="li-label-${idx}" value="${label||''}" style="flex:2" oninput="recalcInvoiceTotal()">
     <input type="number" placeholder="Qty" id="li-qty-${idx}" value="${qty||1}" style="width:60px" oninput="recalcInvoiceTotal()">
     <input type="number" placeholder="Price" id="li-price-${idx}" value="${price||''}" style="width:90px" oninput="recalcInvoiceTotal()">
     <button class="remove-item" onclick="document.getElementById('li-${idx}').remove();recalcInvoiceTotal()">×</button>`;
-  document.getElementById('invoice-line-items').appendChild(div);
+  document.getElementById(containerId).appendChild(div);
   recalcInvoiceTotal();
 }
 
-function getInvoiceLineItems() {
+function getInvoiceLineItems(kind) {
   const items = [];
-  document.querySelectorAll('#invoice-line-items .checklist-item').forEach(row => {
+  document.querySelectorAll(`#invoice-${kind === 'govt' ? 'govt' : 'service'}-items .checklist-item`).forEach(row => {
     const idx = row.id.split('-')[1];
     const label = document.getElementById(`li-label-${idx}`)?.value.trim();
     const qty   = parseFloat(document.getElementById(`li-qty-${idx}`)?.value) || 0;
@@ -3720,39 +3923,41 @@ function getInvoiceLineItems() {
 }
 
 function recalcInvoiceTotal() {
-  const items      = getInvoiceLineItems();
-  const subtotal   = items.reduce((sum, i) => sum + i.qty * i.unit_price, 0);
-  const svcCharge  = parseFloat(document.getElementById('inv-discount')?.value) || 0;
-  const taxPct     = parseFloat(document.getElementById('inv-tax')?.value) || 0;
-  const afterCharge = subtotal + svcCharge;
-  const taxAmt     = afterCharge * (taxPct / 100);
-  const total      = afterCharge + taxAmt;
+  const govtItems    = getInvoiceLineItems('govt');
+  const serviceItems = getInvoiceLineItems('service');
+  const govtTotal    = govtItems.reduce((sum, i) => sum + i.qty * i.unit_price, 0);
+  const serviceTotal = serviceItems.reduce((sum, i) => sum + i.qty * i.unit_price, 0);
+  const subtotal     = govtTotal + serviceTotal;
+  const taxPct       = parseFloat(document.getElementById('inv-tax')?.value) || 0;
+  const taxAmt       = subtotal * (taxPct / 100);
+  const total        = subtotal + taxAmt;
   const display = document.getElementById('invoice-total-display');
   if (display) {
     display.innerHTML = `
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Subtotal</span><span>₹${subtotal.toFixed(2)}</span></div>
-      <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Service Charge</span><span style="color:var(--green)">+₹${svcCharge.toFixed(2)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--gold)">Government Fees</span><span>₹${govtTotal.toFixed(2)}</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--teal)">Service Fees</span><span>₹${serviceTotal.toFixed(2)}</span></div>
       <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Tax (${taxPct}%)</span><span>₹${taxAmt.toFixed(2)}</span></div>
       <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-weight:700"><span>Total</span><span style="color:var(--green)">₹${total.toFixed(2)}</span></div>`;
   }
 }
 
 async function saveInvoice() {
-  const clientId = document.getElementById('inv-client-id').value;
-  const items     = getInvoiceLineItems();
+  const clientId     = document.getElementById('inv-client-id').value;
+  const serviceItems = getInvoiceLineItems('service');
+  const govtItems     = getInvoiceLineItems('govt');
   if (!clientId) return toast('Select a client','error');
-  if (!items.length) return toast('Add at least one line item','error');
+  if (!serviceItems.length && !govtItems.length) return toast('Add at least one fee line item','error');
   const body = {
     client_id: parseInt(clientId),
     app_id: document.getElementById('inv-app-id').value.trim() || null,
-    line_items: items,
-    discount: parseFloat(document.getElementById('inv-discount').value) || 0,
+    service_items: serviceItems,
+    govt_items: govtItems,
     tax_percent: parseFloat(document.getElementById('inv-tax').value) || 0,
     due_date: document.getElementById('inv-due-date').value || null,
     notes: document.getElementById('inv-notes').value.trim(),
   };
   try {
-    const result = await api('/admin/invoice', {method:'POST', body: JSON.stringify(body)});
+    const result = await api('/admin/invoice/split', {method:'POST', body: JSON.stringify(body)});
     closeModal('invoice-modal');
     toast(`Invoice ${result.invoice_no} created — ₹${result.total}`);
     loadInvoices();
@@ -3766,6 +3971,9 @@ async function openInvoiceDetail(invoiceId) {
   try {
     const data = await api(`/admin/invoice/${invoiceId}`);
     const inv = data.invoice;
+    const govtItems    = inv.line_items.filter(li => li.type === 'govt');
+    const serviceItems = inv.line_items.filter(li => li.type === 'service');
+    const otherItems   = inv.line_items.filter(li => !li.type);
     document.getElementById('invoice-detail-title').textContent = inv.invoice_no;
     document.getElementById('invoice-detail-body').innerHTML = `
       <div style="display:flex;justify-content:space-between;margin-bottom:16px">
@@ -3775,15 +3983,22 @@ async function openInvoiceDetail(invoiceId) {
         </div>
         <span class="status status-${invoiceStatusClass(inv.status)}">${inv.status}</span>
       </div>
-      <div class="table-wrap" style="margin-bottom:16px">
-        <table>
-          <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Amount</th></tr></thead>
-          <tbody>${inv.line_items.map(li => `<tr><td>${li.label}</td><td>${li.qty}</td><td>₹${li.unit_price}</td><td>₹${li.amount}</td></tr>`).join('')}</tbody>
-        </table>
-      </div>
+      ${govtItems.length ? `
+        <div style="font-size:11px;font-weight:600;color:var(--gold);margin-bottom:6px;text-transform:uppercase">Government / Embassy Fees</div>
+        <div class="table-wrap" style="margin-bottom:12px">
+          <table><tbody>${govtItems.map(li => `<tr><td>${li.label}</td><td>${li.qty}</td><td>₹${li.unit_price}</td><td>₹${li.amount}</td></tr>`).join('')}</tbody></table>
+        </div>` : ''}
+      ${serviceItems.length ? `
+        <div style="font-size:11px;font-weight:600;color:var(--teal);margin-bottom:6px;text-transform:uppercase">Agency Service Fees</div>
+        <div class="table-wrap" style="margin-bottom:12px">
+          <table><tbody>${serviceItems.map(li => `<tr><td>${li.label}</td><td>${li.qty}</td><td>₹${li.unit_price}</td><td>₹${li.amount}</td></tr>`).join('')}</tbody></table>
+        </div>` : ''}
+      ${otherItems.length ? `
+        <div class="table-wrap" style="margin-bottom:12px">
+          <table><tbody>${otherItems.map(li => `<tr><td>${li.label}</td><td>${li.qty}</td><td>₹${li.unit_price}</td><td>₹${li.amount}</td></tr>`).join('')}</tbody></table>
+        </div>` : ''}
       <div style="background:var(--surface2);border-radius:var(--r);padding:12px;font-size:13px;margin-bottom:16px">
         <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Subtotal</span><span>₹${inv.subtotal}</span></div>
-        <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Service Charge</span><span style="color:var(--green)">+₹${inv.discount}</span></div>
         <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--text3)">Tax</span><span>₹${inv.tax_amount}</span></div>
         <div style="display:flex;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-weight:700"><span>Total</span><span>₹${inv.total}</span></div>
         <div style="display:flex;justify-content:space-between;margin-top:4px;color:var(--green)"><span>Paid</span><span>₹${inv.amount_paid}</span></div>
@@ -3791,7 +4006,7 @@ async function openInvoiceDetail(invoiceId) {
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <strong style="font-size:13px">Payment History</strong>
-        ${inv.balance_due > 0 ? `<button class="btn btn-primary btn-sm" onclick="openPaymentModal(${invoiceId})">Record Payment</button>` : ''}
+        ${inv.balance_due > 0 && inv.status !== 'cancelled' ? `<button class="btn btn-primary btn-sm" onclick="openPaymentModal(${invoiceId})">Record Payment</button>` : ''}
       </div>
       <div>
         ${data.payments.map(p => `
@@ -3805,11 +4020,39 @@ async function openInvoiceDetail(invoiceId) {
         `).join('') || '<p style="color:var(--text3);font-size:12px">No payments recorded yet.</p>'}
       </div>
       <div style="margin-top:16px;display:flex;gap:8px">
+        ${inv.status !== 'cancelled' ? `<button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="openCancelInvoiceModal(${invoiceId})">Cancel Invoice</button>` : ''}
         <button class="btn btn-danger btn-sm" onclick="deleteInvoiceConfirm(${invoiceId})">Delete Invoice</button>
       </div>
     `;
     openModal('invoice-detail-modal');
   } catch(e) { toast(e.message || 'Error loading invoice','error'); }
+}
+
+function openCancelInvoiceModal(invoiceId) {
+  currentInvoiceId = invoiceId;
+  const inv = allInvoices.find(i => i.id === invoiceId);
+  const items = inv ? inv.line_items : [];
+  const govtTotal    = items.filter(li=>li.type==='govt').reduce((s,i)=>s+i.amount,0);
+  const serviceTotal = items.filter(li=>li.type==='service').reduce((s,i)=>s+i.amount,0);
+  document.getElementById('cancel-invoice-breakdown').innerHTML = `
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--gold)">Government Fees (non-refundable)</span><span>₹${govtTotal.toFixed(2)}</span></div>
+    <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--teal)">Service Fees</span><span>₹${serviceTotal.toFixed(2)}</span></div>
+  `;
+  closeModal('invoice-detail-modal');
+  openModal('cancel-invoice-modal');
+}
+
+async function confirmCancelInvoice() {
+  const retainService = document.getElementById('cancel-retain-service').checked;
+  try {
+    const result = await api(`/admin/invoice/${currentInvoiceId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({retain_service_fee: retainService})
+    });
+    closeModal('cancel-invoice-modal');
+    toast(`Invoice cancelled — Rs.${result.refundable_amount} refundable`);
+    loadInvoices();
+  } catch(e) { toast(e.message || 'Error cancelling invoice','error'); }
 }
 
 function openPaymentModal(invoiceId) {
@@ -4226,103 +4469,6 @@ async function checkStorageStatus() {
   </div>
 </div>
 
-<!-- Hotel Modal -->
-<div class="modal-overlay" id="hotel-modal">
-  <div class="modal" style="max-width:560px">
-    <div class="modal-header">
-      <span class="modal-title" id="hotel-modal-title">Add Hotel Booking</span>
-      <button class="modal-close" onclick="closeModal('hotel-modal')">×</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Client</label>
-          <select id="hotel-client-id" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-size:13px;outline:none">
-            <option value="">Select client...</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Application ID (optional)</label>
-          <input type="text" id="hotel-app-id" placeholder="VIS-2026-001">
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Hotel Name</label>
-            <input type="text" id="hotel-name" placeholder="e.g. Atlantis The Palm">
-          </div>
-          <div class="form-group">
-            <label>Booking Status</label>
-            <select id="hotel-status">
-              <option value="confirmed">Confirmed</option>
-              <option value="tentative">Tentative</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>City</label>
-            <input type="text" id="hotel-city" placeholder="e.g. Dubai">
-          </div>
-          <div class="form-group">
-            <label>Country</label>
-            <input type="text" id="hotel-country" placeholder="e.g. UAE">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Check-in Date</label>
-            <input type="date" id="hotel-checkin">
-          </div>
-          <div class="form-group">
-            <label>Check-out Date</label>
-            <input type="date" id="hotel-checkout">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Room Type</label>
-            <input type="text" id="hotel-room" placeholder="e.g. Deluxe King">
-          </div>
-          <div class="form-group">
-            <label>Booking Reference</label>
-            <input type="text" id="hotel-ref" placeholder="e.g. HB-12345">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Price per Night (INR)</label>
-            <input type="number" id="hotel-ppn" placeholder="0" oninput="calcHotelTotal()">
-          </div>
-          <div class="form-group">
-            <label>Total Price (INR)</label>
-            <input type="number" id="hotel-total" placeholder="0">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Booking Type</label>
-          <div style="display:flex;gap:12px;margin-top:6px">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
-              <input type="radio" name="hotel-type" value="0" checked> Current / Past booking
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
-              <input type="radio" name="hotel-type" value="1"> Future booking
-            </label>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Notes</label>
-          <textarea id="hotel-notes" placeholder="e.g. Breakfast included, sea view requested"></textarea>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('hotel-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveHotel()">Save Booking</button>
-    </div>
-  </div>
-</div>
-
 <!-- Lead Modal -->
 <div class="modal-overlay" id="lead-modal">
   <div class="modal" style="max-width:480px">
@@ -4438,7 +4584,7 @@ async function checkStorageStatus() {
 
 <!-- Invoice Modal -->
 <div class="modal-overlay" id="invoice-modal">
-  <div class="modal" style="max-width:620px">
+  <div class="modal" style="max-width:640px">
     <div class="modal-header">
       <span class="modal-title">New Invoice</span>
       <button class="modal-close" onclick="closeModal('invoice-modal')">×</button>
@@ -4451,25 +4597,57 @@ async function checkStorageStatus() {
           </div>
           <div class="form-group"><label>Application ID (optional)</label><input type="text" id="inv-app-id" placeholder="VIS-2026-001"></div>
         </div>
+
+        <div style="background:var(--surface2);border-left:3px solid var(--blue);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--text2)">
+          Government fees are non-refundable if a client cancels. Service fees can be retained by the agency at your discretion. Keep them in separate line items below.
+        </div>
+
         <div class="form-group">
-          <label>Line Items</label>
-          <div id="invoice-line-items"></div>
-          <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addInvoiceLineItem()">+ Add Line Item</button>
+          <label style="color:var(--gold)">Government / Embassy Fees</label>
+          <div id="invoice-govt-items"></div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addInvoiceLineItem('govt')">+ Add Government Fee</button>
         </div>
+
+        <div class="form-group">
+          <label style="color:var(--teal)">Agency Service Fees</label>
+          <div id="invoice-service-items"></div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addInvoiceLineItem('service')">+ Add Service Fee</button>
+        </div>
+
         <div class="form-row">
-          <div class="form-group"><label>Service Charge (₹)</label><input type="number" id="inv-discount" value="0" oninput="recalcInvoiceTotal()"></div>
           <div class="form-group"><label>Tax (%)</label><input type="number" id="inv-tax" value="0" oninput="recalcInvoiceTotal()"></div>
-        </div>
-        <div id="invoice-total-display" style="background:var(--surface2);border-radius:var(--r);padding:12px;font-size:13px"></div>
-        <div class="form-row">
           <div class="form-group"><label>Due Date</label><input type="date" id="inv-due-date"></div>
         </div>
+        <div id="invoice-total-display" style="background:var(--surface2);border-radius:var(--r);padding:12px;font-size:13px"></div>
         <div class="form-group"><label>Notes</label><textarea id="inv-notes" placeholder="Optional notes for client"></textarea></div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('invoice-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveInvoice()">Create Invoice</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cancel Invoice Modal -->
+<div class="modal-overlay" id="cancel-invoice-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <span class="modal-title">Cancel Invoice</span>
+      <button class="modal-close" onclick="closeModal('cancel-invoice-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="cancel-invoice-breakdown" style="background:var(--surface2);border-radius:var(--r);padding:14px;font-size:13px;margin-bottom:16px"></div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
+          <input type="checkbox" id="cancel-retain-service" checked style="width:16px;height:16px">
+          Retain the agency service fee (only refund the government fee)
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('cancel-invoice-modal')">Back</button>
+      <button class="btn btn-danger" onclick="confirmCancelInvoice()">Confirm Cancellation</button>
     </div>
   </div>
 </div>
