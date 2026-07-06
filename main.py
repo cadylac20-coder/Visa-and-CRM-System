@@ -2829,6 +2829,35 @@ def generate_letter(data: GenerateLetterRequest, admin=Depends(require_admin)):
         "template_type": dict(template)["template_type"]
     }
 
+@app.post("/admin/letter-templates/generate-pdf")
+def generate_letter_pdf(data: GenerateLetterRequest, admin=Depends(require_admin)):
+    """Same as generate_letter but returns a downloadable PDF."""
+    letter = generate_letter(data, admin)  # reuse the text-generation logic
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(tmp.name, pagesize=A4, topMargin=25*mm, bottomMargin=25*mm,
+                            leftMargin=25*mm, rightMargin=25*mm)
+    styles = getSampleStyleSheet()
+    header_style = ParagraphStyle("LetterHeader", parent=styles["Heading1"], fontSize=14,
+                                  textColor=colors.HexColor("#1e3a5f"), spaceAfter=16)
+    body_style = ParagraphStyle("LetterBody", parent=styles["Normal"], fontSize=11, leading=17)
+
+    story = [Paragraph("Uniglobe MKOV Travel", header_style)]
+    for para in letter["body"].split("\n\n"):
+        for line in para.split("\n"):
+            story.append(Paragraph(line if line.strip() else "&nbsp;", body_style))
+        story.append(Spacer(1, 6))
+    doc.build(story)
+
+    filename = f"{letter['template_type']}_letter.pdf"
+    return FileResponse(tmp.name, filename=filename, media_type="application/pdf")
+
 @app.put("/admin/letter-templates/{template_id}")
 def update_letter_template(template_id: int, data: NewLetterTemplateRequest, admin=Depends(require_admin)):
     conn = get_db()
