@@ -1,23 +1,107 @@
-"""
-database.py — Visa System with Turso cloud database
-Uses 'libsql' package (pip install libsql) — the official 2025 replacement
-for libsql-experimental. Same API, new name.
-
-Superadmin credentials set via Render environment variables:
-  SUPERADMIN_EMAIL  (default: admin@uniglobemkov.in)
-  SUPERADMIN_PASS   (default: MkovAdmin@2026)
-  SUPERADMIN_NAME   (default: Admin)
-
-INSERT OR IGNORE ensures the superadmin is created ONCE on first deploy.
-Password changes made through the UI survive all future redeploys.
-"""
-
-import sqlite3
 import os
 import libsql as turso
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+# ── Row/Cursor/Connection wrappers ────────────────────────────────────────────
+# These exist purely so every existing `row["col"]`, `dict(row)`, and
+# `row[0]` call across the codebase keeps working against libsql, which
+# returns plain tuples with no column-name access by default.
+
+class DictRow:
+    """Mimics sqlite3.Row: supports row["col"], row[0], dict(row), len(row)."""
+    __slots__ = ("_values", "_columns")
+
+    def __init__(self, values, columns):
+        self._values  = values
+        self._columns = columns
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            try:
+                idx = self._columns.index(key)
+            except ValueError:
+                raise KeyError(key)
+            return self._values[idx]
+        return self._values[key]
+
+    def keys(self):
+        return list(self._columns)
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except (KeyError, IndexError):
+            return default
+
+    def __contains__(self, key):
+        return key in self._columns
+
+    def __iter__(self):
+        return iter(self._values)
+
+    def __len__(self):
+        return len(self._values)
+
+    def __repr__(self):
+        return f"DictRow({dict(zip(self._columns, self._values))!r})"
+
+
+class _CursorWrapper:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def execute(self, sql, params=None):
+        if params is None:
+            self._cursor.execute(sql)
+        else:
+            self._cursor.execute(sql, params)
+        return self
+
+    def _columns(self):
+        desc = self._cursor.description or []
+        return [d[0] for d in desc]
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        if row is None:
+            return None
+        return DictRow(row, self._columns())
+
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        cols = self._columns()
+        return [DictRow(r, cols) for r in rows]
+
+    @property
+    def lastrowid(self):
+        return getattr(self._cursor, "lastrowid", None)
+
+
+class _ConnWrapper:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, sql, params=None):
+        cur = self._conn.cursor()
+        if params is None:
+            cur.execute(sql)
+        else:
+            cur.execute(sql, params)
+        return _CursorWrapper(cur)
+
+    def cursor(self):
+        return _CursorWrapper(self._conn.cursor())
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        close_fn = getattr(self._conn, "close", None)
+        if callable(close_fn):
+            close_fn()
 
 
 def get_db():
@@ -30,9 +114,8 @@ def get_db():
             "Environment settings. Go to your service -> Environment to add them."
         )
 
-    conn = turso.connect(database=url, auth_token=token)
-    conn.row_factory = sqlite3.Row
-    return conn
+    raw_conn = turso.connect(database=url, auth_token=token)
+    return _ConnWrapper(raw_conn)
 
 
 def init_db():
