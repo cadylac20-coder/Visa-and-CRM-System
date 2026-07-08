@@ -525,12 +525,15 @@ def init_db():
     from auth import hash_password
     admin_email = os.getenv("SUPERADMIN_EMAIL", "admin@uniglobemkov.in")
     admin_name  = os.getenv("SUPERADMIN_NAME",  "Admin")
-    admin_pass  = os.getenv("SUPERADMIN_PASS",  "MkovAdmin@2026")
+    admin_pass  = os.getenv("SUPERADMIN_PASS",  "admin123")
 
     c.execute("""
-        INSERT OR IGNORE INTO admin_users (email, name, password, role, active)
-        VALUES (?, ?, ?, 'superadmin', 1)
-    """, (admin_email, admin_name, hash_password(admin_pass)))
+    INSERT OR REPLACE INTO admin_users (id, email, name, password, role, active)
+    VALUES (
+        (SELECT id FROM admin_users WHERE email=?),
+        ?, ?, ?, 'superadmin', 1
+        )
+        """, (admin_email, admin_email, admin_name, hash_password(admin_pass)))
 
     conn.commit()
     conn.close()
