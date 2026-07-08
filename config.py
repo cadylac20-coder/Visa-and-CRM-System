@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Authentication ────────────────────────────────────────────────────────────
-SECRET_KEY  = os.getenv("SECRET_KEY", "CHANGE-THIS-BEFORE-GOING-LIVE")
+SECRET_KEY  = os.getenv("SECRET_KEY")
 TOKEN_HOURS = 12
 
 # ── Turso Database ────────────────────────────────────────────────────────────
@@ -15,9 +15,9 @@ TURSO_AUTH_TOKEN   = os.getenv("TURSO_AUTH_TOKEN")
 # ── Superadmin (set in Render → Environment) ──────────────────────────────────
 # These are ONLY used on first deploy to create the account via INSERT OR IGNORE.
 # After that, changing the password in the UI is permanent — redeploy won't reset it.
-SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "admin@uniglobemkov.in")
-SUPERADMIN_NAME  = os.getenv("SUPERADMIN_NAME",  "Admin")
-SUPERADMIN_PASS  = os.getenv("SUPERADMIN_PASS",  "MkovAdmin@2026")
+SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL")
+SUPERADMIN_NAME  = os.getenv("SUPERADMIN_NAME")
+SUPERADMIN_PASS  = os.getenv("SUPERADMIN_PASS")
 
 # ── Notifications ─────────────────────────────────────────────────────────────
 GMAIL_ADDRESS      = os.getenv("GMAIL_ADDRESS", "")
