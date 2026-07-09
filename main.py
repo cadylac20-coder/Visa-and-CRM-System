@@ -221,6 +221,23 @@ def serve_client():
     path = os.path.join(STATIC_DIR, "client.html")
     return HTMLResponse(open(path).read()) if os.path.exists(path) else HTMLResponse("Not found", 404)
 
+@app.get("/manifest.json")
+def serve_manifest():
+    path = os.path.join(STATIC_DIR, "manifest.json")
+    if not os.path.exists(path):
+        raise HTTPException(404, "manifest.json not found")
+    return FileResponse(path, media_type="application/manifest+json")
+
+@app.get("/sw.js")
+def serve_service_worker():
+    # Served at root (not /static/sw.js) so its scope covers the whole
+    # site, including /admin — a service worker's scope is limited to
+    # the path it's served from.
+    path = os.path.join(STATIC_DIR, "sw.js")
+    if not os.path.exists(path):
+        raise HTTPException(404, "sw.js not found")
+    return FileResponse(path, media_type="application/javascript")
+
 # --- Auth ──────────────────────────────────────────────────────────────────────
 @app.post("/auth/admin/login")
 def login_admin(data: LoginRequest): return admin_login(data.email, data.password)
