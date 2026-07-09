@@ -1,0 +1,25 @@
+{
+  "name": "MKOV Visa CRM",
+  "short_name": "MKOV CRM",
+  "description": "Internal staff CRM for Uniglobe MKOV Travel — visa applications, clients, and document management",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#0d3055",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
