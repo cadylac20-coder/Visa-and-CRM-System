@@ -145,6 +145,9 @@ def init_db():
             password          TEXT NOT NULL,
             passport_b64      TEXT,
             passport_filename TEXT,
+            passport_number   TEXT,
+            passport_dob      TEXT,
+            passport_expiry   TEXT,
             created_at        DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -210,6 +213,7 @@ def init_db():
             base_price          REAL DEFAULT 0,
             discount_percentage REAL DEFAULT 0,
             final_price         REAL,
+            typical_govt_fee    REAL DEFAULT 0,
             is_default          INTEGER DEFAULT 0,
             created_by          TEXT,
             created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -520,6 +524,27 @@ def init_db():
             stall_threshold_days INTEGER DEFAULT 4
         )
     """)
+
+    # ── Migration: add passport tracking columns to existing clients table ────
+    # CREATE TABLE IF NOT EXISTS above only affects brand-new databases —
+    # existing deployments need these columns added explicitly.
+    for col_def in [
+        "passport_number TEXT",
+        "passport_dob TEXT",
+        "passport_expiry TEXT",
+    ]:
+        col_name = col_def.split()[0]
+        try:
+            c.execute(f"ALTER TABLE clients ADD COLUMN {col_def}")
+        except Exception as e:
+            if "duplicate column" not in str(e).lower():
+                print(f"Migration note ({col_name}): {e}")
+
+    try:
+        c.execute("ALTER TABLE custom_checklists ADD COLUMN typical_govt_fee REAL DEFAULT 0")
+    except Exception as e:
+        if "duplicate column" not in str(e).lower():
+            print(f"Migration note (typical_govt_fee): {e}")
 
     # ── PERMANENT SUPERADMIN — INSERT OR IGNORE so redeploys never reset it ───
     from auth import hash_password
