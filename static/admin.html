@@ -1085,16 +1085,16 @@ tbody tr:hover{background:var(--surface2)}
         <div class="form-group">
           <label>Upload Passport — stored securely</label>
           <div style="display:flex;gap:8px">
-            <div class="file-drop" id="passport-drop" style="flex:1;cursor:pointer" onclick="document.getElementById('passport-file').click()">
+            <label class="file-drop" id="passport-drop" style="flex:1;cursor:pointer;display:block">
               <input type="file" id="passport-file" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="handlePassportUpload(this)">
               <p>📁 Choose File</p>
               <span>PDF, JPG, PNG — max 5MB</span>
-            </div>
-            <div class="file-drop" style="flex:1;cursor:pointer" onclick="document.getElementById('passport-camera').click()">
+            </label>
+            <label class="file-drop" style="flex:1;cursor:pointer;display:block">
               <input type="file" id="passport-camera" accept="image/*" capture="environment" style="display:none" onchange="handlePassportUpload(this)">
               <p>📷 Take Photo</p>
               <span>Use device camera</span>
-            </div>
+            </label>
           </div>
           <div id="passport-preview" style="display:none;margin-top:8px;font-size:12px;color:var(--green)"></div>
         </div>
@@ -2571,11 +2571,15 @@ function openVaultUploadPicker(clientId) {
         <div class="form-group" style="margin-top:12px">
           <label>File</label>
           <div style="display:flex;gap:8px">
-            <button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById('vault-actual-file').click()">📁 Choose File</button>
-            <button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById('vault-camera-file').click()">📷 Take Photo</button>
+            <label class="btn btn-ghost btn-sm" style="flex:1;text-align:center;cursor:pointer">
+              📁 Choose File
+              <input type="file" id="vault-actual-file" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="updateVaultFilePreview(this)">
+            </label>
+            <label class="btn btn-ghost btn-sm" style="flex:1;text-align:center;cursor:pointer">
+              📷 Take Photo
+              <input type="file" id="vault-camera-file" accept="image/*" capture="environment" style="display:none" onchange="updateVaultFilePreview(this)">
+            </label>
           </div>
-          <input type="file" id="vault-actual-file" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="updateVaultFilePreview(this)">
-          <input type="file" id="vault-camera-file" accept="image/*" capture="environment" style="display:none" onchange="updateVaultFilePreview(this)">
           <div id="vault-file-preview" style="margin-top:8px;font-size:12px;color:var(--text3)">No file selected</div>
         </div>
       </div>
@@ -4782,11 +4786,15 @@ function installApp() {
       <div class="form-group">
         <label>File (PDF, JPG, PNG)</label>
         <div style="display:flex;gap:8px">
-          <button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById('upload-doc-file').click()">📁 Choose File</button>
-          <button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById('upload-doc-camera').click()">📷 Take Photo</button>
+          <label class="btn btn-ghost btn-sm" style="flex:1;text-align:center;cursor:pointer">
+            📁 Choose File
+            <input type="file" id="upload-doc-file" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="previewUploadFile(this)">
+          </label>
+          <label class="btn btn-ghost btn-sm" style="flex:1;text-align:center;cursor:pointer">
+            📷 Take Photo
+            <input type="file" id="upload-doc-camera" accept="image/*" capture="environment" style="display:none" onchange="previewUploadFile(this)">
+          </label>
         </div>
-        <input type="file" id="upload-doc-file" accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="previewUploadFile(this)">
-        <input type="file" id="upload-doc-camera" accept="image/*" capture="environment" style="display:none" onchange="previewUploadFile(this)">
         <div id="upload-drop-text" style="margin-top:8px;font-size:12px;color:var(--text3)">No file selected</div>
       </div>
     </div>
