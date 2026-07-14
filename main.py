@@ -85,11 +85,13 @@ class CustomChecklistData(BaseModel):
     documents: list
     base_price: float = 0
     discount_percentage: float = 0
+    typical_govt_fee: float = 0
 
 class UpdateChecklistData(BaseModel):
     base_price: Optional[float] = None
     discount_percentage: Optional[float] = None
     documents: Optional[list] = None
+    typical_govt_fee: Optional[float] = None
 
 class ExportChecklistsRequest(BaseModel):
     checklist_ids: list[int]
@@ -458,10 +460,11 @@ def create_checklist(data: CustomChecklistData, admin=Depends(require_roles("vis
     conn = get_db()
     try:
         conn.execute("""INSERT INTO custom_checklists
-            (country, visa_type, name, description, documents_json, base_price, discount_percentage, final_price, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
+            (country, visa_type, name, description, documents_json, base_price, discount_percentage, final_price, typical_govt_fee, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (data.country, data.visa_type, data.name, data.description,
-             json.dumps(data.documents), data.base_price, data.discount_percentage, final_price, admin["name"]))
+             json.dumps(data.documents), data.base_price, data.discount_percentage, final_price,
+             data.typical_govt_fee, admin["name"]))
         conn.commit()
         new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         conn.close()
@@ -513,6 +516,8 @@ def update_checklist(checklist_id: int, data: UpdateChecklistData, admin=Depends
         conn.execute("UPDATE custom_checklists SET discount_percentage=?, final_price=? WHERE id=?", (data.discount_percentage, fp, checklist_id))
     if data.documents is not None:
         conn.execute("UPDATE custom_checklists SET documents_json=? WHERE id=?", (json.dumps(data.documents), checklist_id))
+    if data.typical_govt_fee is not None:
+        conn.execute("UPDATE custom_checklists SET typical_govt_fee=? WHERE id=?", (data.typical_govt_fee, checklist_id))
     conn.execute("UPDATE custom_checklists SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (checklist_id,))
     conn.commit(); conn.close()
     return {"status": "updated"}
@@ -527,6 +532,80 @@ def delete_checklist(checklist_id: int, admin=Depends(require_roles("visa_staff"
     conn.execute("DELETE FROM custom_checklists WHERE id=?", (checklist_id,))
     conn.commit(); conn.close()
     return {"status": "deleted"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INSTANT QUOTE CALCULATOR
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/quote")
+def instant_quote(country: str, visa_type: str, group_size: int = 1, admin=Depends(require_admin)):
+    """
+    Look up the best-matching checklist for a country + visa type and return
+    an instant estimated quote: agency service fee + typical government fee,
+    scaled by group size. Falls back gracefully if no checklist exists yet.
+    """
+    conn = get_db()
+    checklist = conn.execute("""
+        SELECT * FROM custom_checklists
+        WHERE LOWER(country)=LOWER(?) AND LOWER(visa_type)=LOWER(?)
+        ORDER BY is_default DESC, updated_at DESC LIMIT 1
+    """, (country, visa_type)).fetchone()
+
+    if not checklist:
+        # Fall back to any checklist for that country regardless of visa type
+        checklist = conn.execute("""
+            SELECT * FROM custom_checklists
+            WHERE LOWER(country)=LOWER(?)
+            ORDER BY is_default DESC, updated_at DESC LIMIT 1
+        """, (country,)).fetchone()
+
+    conn.close()
+
+    if not checklist:
+        return {
+            "found": False,
+            "message": f"No pricing on file yet for {country} — {visa_type}. Add a VFS checklist with pricing to enable instant quotes.",
+            "country": country, "visa_type": visa_type, "group_size": group_size,
+        }
+
+    cl = dict(checklist)
+    service_fee_per_person = cl["final_price"] or cl["base_price"] or 0
+    govt_fee_per_person     = cl["typical_govt_fee"] or 0
+
+    service_total = round(service_fee_per_person * group_size, 2)
+    govt_total    = round(govt_fee_per_person * group_size, 2)
+    grand_total   = round(service_total + govt_total, 2)
+
+    return {
+        "found": True,
+        "country": cl["country"],
+        "visa_type": cl["visa_type"],
+        "checklist_name": cl["name"],
+        "group_size": group_size,
+        "per_person": {
+            "service_fee": service_fee_per_person,
+            "govt_fee":    govt_fee_per_person,
+            "total":       round(service_fee_per_person + govt_fee_per_person, 2),
+        },
+        "group_total": {
+            "service_fee": service_total,
+            "govt_fee":    govt_total,
+            "total":       grand_total,
+        },
+        "documents_required": json.loads(cl["documents_json"]),
+    }
+
+@app.get("/admin/quote/countries")
+def quote_available_countries(admin=Depends(require_admin)):
+    """List every country+visa_type combination that has pricing on file, for the quote form dropdown."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT DISTINCT country, visa_type FROM custom_checklists
+        ORDER BY country, visa_type
+    """).fetchall()
+    conn.close()
+    return {"combinations": [dict(r) for r in rows]}
 
 @app.post("/admin/checklists/export-pdf")
 def export_checklists_pdf(data: ExportChecklistsRequest, admin=Depends(require_admin)):
@@ -887,7 +966,8 @@ def admin_get_client(client_id: int, admin=Depends(require_admin)):
     """Get full client profile with applications, discounts, documents."""
     conn = get_db()
     client = conn.execute(
-        "SELECT id, name, email, phone, created_at, passport_filename FROM clients WHERE id=?",
+        "SELECT id, name, email, phone, created_at, passport_filename, "
+        "passport_number, passport_dob, passport_expiry FROM clients WHERE id=?",
         (client_id,)
     ).fetchone()
     if not client:
@@ -2546,8 +2626,11 @@ async def vault_upload(
     # If passport, push extracted fields to client profile as structured data
     if doc_type == "passport" and extracted:
         conn.execute(
-            "UPDATE clients SET passport_b64=?, passport_filename=? WHERE id=?",
-            (b64, file.filename, client_id)
+            "UPDATE clients SET passport_b64=?, passport_filename=?, "
+            "passport_number=?, passport_dob=?, passport_expiry=? WHERE id=?",
+            (b64, file.filename,
+             extracted.get("passport_no"), extracted.get("dob"),
+             extracted.get("expiry_date"), client_id)
         )
 
     conn.commit()
@@ -2583,6 +2666,99 @@ def vault_delete(client_id: int, doc_id: int, admin=Depends(require_admin)):
     conn.execute("DELETE FROM document_vault WHERE id=? AND client_id=?", (doc_id, client_id))
     conn.commit(); conn.close()
     return {"status":"deleted"}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PASSPORT / VISA EXPIRY TRACKING (repeat clients)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class UpdatePassportRequest(BaseModel):
+    passport_number: Optional[str] = None
+    passport_dob:    Optional[str] = None
+    passport_expiry: Optional[str] = None   # DD/MM/YYYY
+
+def _parse_ddmmyyyy(s: str):
+    """Parse a DD/MM/YYYY string into a date object, tolerating '-' separators too."""
+    if not s:
+        return None
+    for sep in ("/", "-"):
+        parts = s.split(sep)
+        if len(parts) == 3:
+            try:
+                dd, mm, yyyy = int(parts[0]), int(parts[1]), int(parts[2])
+                if yyyy < 100:
+                    yyyy += 2000 if yyyy <= 30 else 1900
+                return datetime(yyyy, mm, dd).date()
+            except Exception:
+                continue
+    return None
+
+@app.get("/admin/passport-expiry-tracker")
+def passport_expiry_tracker(within_days: int = 180, admin=Depends(require_admin)):
+    """
+    Lists clients with a passport expiry on file, flags anyone expiring within
+    `within_days` (default 6 months), and marks repeat clients (2+ applications)
+    since they're the highest-value people to proactively reach out to for renewal.
+    """
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT c.id, c.name, c.email, c.phone, c.passport_number,
+               c.passport_dob, c.passport_expiry,
+               COUNT(a.id) as application_count,
+               MAX(a.created_at) as last_application_at
+        FROM clients c
+        LEFT JOIN applications a ON a.client_id = c.id
+        WHERE c.passport_expiry IS NOT NULL AND c.passport_expiry != ''
+        GROUP BY c.id
+    """).fetchall()
+    conn.close()
+
+    today = datetime.now().date()
+    results = []
+    for r in rows:
+        d = dict(r)
+        expiry = _parse_ddmmyyyy(d["passport_expiry"])
+        if not expiry:
+            continue
+        days_left = (expiry - today).days
+        d["days_until_expiry"] = days_left
+        d["is_expired"]        = days_left < 0
+        d["is_repeat_client"]  = d["application_count"] >= 2
+        results.append(d)
+
+    # Soonest-expiring first
+    results.sort(key=lambda x: x["days_until_expiry"])
+    flagged = [r for r in results if r["days_until_expiry"] <= within_days]
+
+    return {
+        "within_days":    within_days,
+        "flagged_count":  len(flagged),
+        "flagged":        flagged,
+        "all_tracked":    results,
+    }
+
+@app.put("/admin/client/{client_id}/passport-details")
+def update_passport_details(client_id: int, data: UpdatePassportRequest, admin=Depends(require_admin)):
+    """Manually set/edit passport number, DOB, expiry — for clients without an OCR scan on file."""
+    conn = get_db()
+    client = conn.execute("SELECT id FROM clients WHERE id=?", (client_id,)).fetchone()
+    if not client:
+        conn.close(); raise HTTPException(404, "Client not found")
+
+    sets, values = [], []
+    if data.passport_number is not None:
+        sets.append("passport_number=?"); values.append(data.passport_number)
+    if data.passport_dob is not None:
+        sets.append("passport_dob=?"); values.append(data.passport_dob)
+    if data.passport_expiry is not None:
+        sets.append("passport_expiry=?"); values.append(data.passport_expiry)
+
+    if sets:
+        values.append(client_id)
+        conn.execute(f"UPDATE clients SET {', '.join(sets)} WHERE id=?", values)
+        conn.commit()
+    conn.close()
+    return {"status": "updated"}
 
 def _run_ocr(content: bytes, filename: str) -> dict:
     """Run OCR on uploaded file, return structured passport fields."""
