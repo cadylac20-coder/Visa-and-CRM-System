@@ -27,7 +27,7 @@ from typing import Optional
 
 from database import init_db, get_db
 from auth import require_admin, require_client, require_superadmin, require_roles, admin_login, client_login, hash_password
-from notifier import send_checklist, send_status_update, send_reminder, send_calendar_reminder
+from notifier import send_checklist, send_status_update, send_reminder, send_calendar_reminder, send_invoice
 
 init_db()
 
@@ -88,6 +88,8 @@ class CustomChecklistData(BaseModel):
     typical_govt_fee: float = 0
 
 class UpdateChecklistData(BaseModel):
+    country: Optional[str] = None
+    visa_type: Optional[str] = None
     base_price: Optional[float] = None
     discount_percentage: Optional[float] = None
     documents: Optional[list] = None
@@ -508,6 +510,10 @@ def update_checklist(checklist_id: int, data: UpdateChecklistData, admin=Depends
     (consistent with fee structure and invoice service charges elsewhere).
     """
     conn = get_db()
+    if data.country is not None:
+        conn.execute("UPDATE custom_checklists SET country=? WHERE id=?", (data.country, checklist_id))
+    if data.visa_type is not None:
+        conn.execute("UPDATE custom_checklists SET visa_type=? WHERE id=?", (data.visa_type, checklist_id))
     if data.base_price is not None:
         conn.execute("UPDATE custom_checklists SET base_price=? WHERE id=?", (data.base_price, checklist_id))
     if data.discount_percentage is not None:
@@ -2091,6 +2097,42 @@ def get_invoice(invoice_id: int, admin=Depends(require_roles("visa_staff"))):
     d["line_items"] = json.loads(d["line_items_json"])
     d["balance_due"] = round((d["total"] or 0) - (d["amount_paid"] or 0), 2)
     return {"invoice": d, "payments": [dict(p) for p in payments]}
+
+
+class SendInvoiceRequest(BaseModel):
+    channels: list = ["whatsapp", "email"]
+
+@app.post("/admin/invoice/{invoice_id}/send")
+def send_invoice_to_client(invoice_id: int, data: SendInvoiceRequest, admin=Depends(require_roles("visa_staff"))):
+    conn = get_db()
+    inv = conn.execute("""
+        SELECT i.*, c.name as client_name, c.email as client_email, c.phone as client_phone
+        FROM invoices i JOIN clients c ON c.id = i.client_id
+        WHERE i.id=?
+    """, (invoice_id,)).fetchone()
+    if not inv:
+        conn.close()
+        raise HTTPException(404, "Invoice not found")
+
+    d = dict(inv)
+    line_items  = json.loads(d["line_items_json"])
+    balance_due = round((d["total"] or 0) - (d["amount_paid"] or 0), 2)
+
+    if d["app_id"]:
+        conn.execute(
+            "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+            (d["app_id"], f"admin:{admin['name']}", "Invoice sent",
+             f"{d['invoice_no']} sent via {', '.join(data.channels)}")
+        )
+        conn.commit()
+    conn.close()
+
+    send_invoice(
+        d["client_name"], d["client_phone"] or "", d["client_email"], d["invoice_no"],
+        line_items, d["subtotal"], d["tax_amount"], d["total"],
+        d["amount_paid"], balance_due, d["due_date"] or "", channels=data.channels
+    )
+    return {"status": "sent", "channels": data.channels}
 
 
 @app.post("/admin/invoice")
