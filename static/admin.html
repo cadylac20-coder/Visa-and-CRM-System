@@ -160,7 +160,10 @@ tbody tr:hover{background:var(--surface2)}
 .page-header p{font-size:13px;color:var(--text3);margin-top:2px}
 
 /* ── Checklist editor ── */
-.checklist-item{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px}
+.checklist-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px}
+.checklist-item textarea{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-family:var(--font);font-size:13px;resize:vertical;min-height:20px;max-height:220px;line-height:1.5;padding:2px 0}
+.checklist-item .drag-handle{padding-top:2px}
+.checklist-item .remove-item{padding-top:0}
 .checklist-item input[type=text]{flex:1;background:transparent;border:none;color:var(--text);font-size:13px;outline:none}
 .checklist-item input[type=text]::placeholder{color:var(--text3)}
 .drag-handle{color:var(--text3);cursor:grab;font-size:16px;line-height:1}
@@ -539,43 +542,9 @@ tbody tr:hover{background:var(--surface2)}
             <button class="btn btn-primary btn-sm" onclick="openModal('new-checklist-modal')">+ New from VFS PDF</button>
           </div>
         </div>
-        <div class="vfs-split">
-          <div>
-            <div class="card">
-              <div class="card-title">Saved Checklists</div>
-              <div id="checklists-list"></div>
-            </div>
-          </div>
-          <div>
-            <div class="card" id="checklist-editor-card" style="display:none">
-              <div class="card-title" id="checklist-editor-title">Edit Checklist</div>
-              <div class="form-group" style="margin-bottom:12px">
-                <label>Country</label>
-                <input type="text" id="edit-checklist-country" placeholder="e.g. USA">
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label>Visa Type</label>
-                  <select id="edit-checklist-type">
-                    <option>tourist</option><option>business</option><option>student</option><option>work</option><option>transit</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label>Service Charge (INR)</label>
-                  <input type="number" id="edit-checklist-price" placeholder="5000">
-                </div>
-              </div>
-              <div class="form-group" style="margin-bottom:10px">
-                <label>Documents</label>
-              </div>
-              <div id="checklist-items-editor"></div>
-              <button class="btn btn-ghost btn-sm" style="margin-top:8px;margin-bottom:16px" onclick="addChecklistItem()">+ Add Item</button>
-              <div class="form-row">
-                <button class="btn btn-primary" onclick="saveChecklist()">Save Checklist</button>
-                <button class="btn btn-danger" onclick="deleteChecklistFromEditor()">Delete Checklist</button>
-              </div>
-            </div>
-          </div>
+        <div class="card">
+          <div class="card-title">Saved Checklists</div>
+          <div id="checklists-list"></div>
         </div>
       </div>
 
@@ -1159,6 +1128,45 @@ tbody tr:hover{background:var(--surface2)}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('new-checklist-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveVFSChecklist()">Save Checklist</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Checklist -->
+<div class="modal-overlay" id="edit-checklist-modal">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <span class="modal-title" id="checklist-editor-title">Edit Checklist</span>
+      <button class="modal-close" onclick="closeModal('edit-checklist-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Country</label>
+        <input type="text" id="edit-checklist-country" placeholder="e.g. USA">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Visa Type</label>
+          <select id="edit-checklist-type">
+            <option>tourist</option><option>business</option><option>student</option><option>work</option><option>transit</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Service Charge (INR)</label>
+          <input type="number" id="edit-checklist-price" placeholder="5000">
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label>Documents / Instructions</label>
+        <p style="font-size:11px;color:var(--text3);margin-top:2px">Each box can hold a single document name or a full paragraph of instructions — boxes grow as you type, and you can drag the bottom-right corner to resize.</p>
+      </div>
+      <div id="checklist-items-editor"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px;margin-bottom:16px" onclick="addChecklistItem()">+ Add Item</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="deleteChecklistFromEditor()">Delete Checklist</button>
+      <button class="btn btn-ghost" onclick="closeModal('edit-checklist-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveChecklist()">Save Checklist</button>
     </div>
   </div>
 </div>
@@ -1865,22 +1873,29 @@ function editChecklist(id) {
   const cl = allChecklists.find(c => c.id === id);
   if (!cl) return;
   editingChecklistId = id;
-  document.getElementById('checklist-editor-card').style.display = 'block';
   document.getElementById('checklist-editor-title').textContent = `Edit: ${cl.country} ${cl.visa_type}`;
   document.getElementById('edit-checklist-country').value = cl.country;
   document.getElementById('edit-checklist-type').value = cl.visa_type;
   document.getElementById('edit-checklist-price').value = cl.base_price;
   renderChecklistEditor(cl.documents);
+  openModal('edit-checklist-modal');
+}
+
+function autoGrowTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
 }
 
 function renderChecklistEditor(docs) {
   document.getElementById('checklist-items-editor').innerHTML = docs.map((d, i) => `
     <div class="checklist-item" id="ci-${i}">
       <span class="drag-handle">⠿</span>
-      <input type="text" value="${d}" id="ci-val-${i}">
+      <textarea id="ci-val-${i}" rows="1" oninput="autoGrowTextarea(this)">${escapeHtml(d)}</textarea>
       <button class="remove-item" onclick="removeChecklistItem(${i})">×</button>
     </div>
   `).join('');
+  // Auto-size every box to fit its existing content (long paragraphs expand immediately)
+  document.querySelectorAll('#checklist-items-editor textarea').forEach(autoGrowTextarea);
 }
 
 function addChecklistItem() {
@@ -1889,8 +1904,9 @@ function addChecklistItem() {
   const div = document.createElement('div');
   div.className = 'checklist-item';
   div.id = `ci-${i}`;
-  div.innerHTML = `<span class="drag-handle">⠿</span><input type="text" id="ci-val-${i}" placeholder="Document name"><button class="remove-item" onclick="this.closest('.checklist-item').remove()">×</button>`;
+  div.innerHTML = `<span class="drag-handle">⠿</span><textarea id="ci-val-${i}" rows="1" placeholder="Document name or paragraph of instructions..." oninput="autoGrowTextarea(this)"></textarea><button class="remove-item" onclick="this.closest('.checklist-item').remove()">×</button>`;
   document.getElementById('checklist-items-editor').appendChild(div);
+  document.getElementById(`ci-val-${i}`).focus();
 }
 
 function removeChecklistItem(i) {
@@ -1898,20 +1914,24 @@ function removeChecklistItem(i) {
 }
 
 function getCurrentEditorDocs() {
-  const inputs = document.querySelectorAll('#checklist-items-editor input[type=text]');
-  return Array.from(inputs).map(i => i.value.trim()).filter(Boolean);
+  const boxes = document.querySelectorAll('#checklist-items-editor textarea');
+  return Array.from(boxes).map(t => t.value.trim()).filter(Boolean);
 }
 
 async function saveChecklist() {
   if (editingChecklistId === null) return;
-  const docs  = getCurrentEditorDocs();
-  const price = parseFloat(document.getElementById('edit-checklist-price').value) || 0;
+  const docs    = getCurrentEditorDocs();
+  const price   = parseFloat(document.getElementById('edit-checklist-price').value) || 0;
+  const country = document.getElementById('edit-checklist-country').value.trim();
+  const visaType= document.getElementById('edit-checklist-type').value;
+  if (!docs.length) return toast('Add at least one document/instruction','error');
   try {
     await api(`/admin/checklist/${editingChecklistId}`, {
-      method:'PUT', body: JSON.stringify({base_price: price, documents: docs})
+      method:'PUT', body: JSON.stringify({country, visa_type: visaType, base_price: price, documents: docs})
     });
     await loadChecklistsFromServer();
     renderChecklists();
+    closeModal('edit-checklist-modal');
     toast('Checklist saved');
   } catch(e) { toast(e.message || 'Error saving checklist','error'); }
 }
@@ -1921,7 +1941,7 @@ async function deleteChecklistFromEditor() {
   if (!confirm('Delete this checklist? This cannot be undone.')) return;
   try {
     await api(`/admin/checklist/${editingChecklistId}`, {method:'DELETE'});
-    document.getElementById('checklist-editor-card').style.display = 'none';
+    closeModal('edit-checklist-modal');
     editingChecklistId = null;
     await loadChecklistsFromServer();
     renderChecklists();
@@ -4259,7 +4279,8 @@ async function saveInvoice() {
     const result = await api('/admin/invoice/split', {method:'POST', body: JSON.stringify(body)});
     closeModal('invoice-modal');
     toast(`Invoice ${result.invoice_no} created — ₹${result.total}`);
-    loadInvoices();
+    await loadInvoices();
+    openInvoiceDetail(result.id);
   } catch(e) { toast(e.message || 'Error creating invoice','error'); }
 }
 
@@ -4305,7 +4326,10 @@ async function openInvoiceDetail(invoiceId) {
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <strong style="font-size:13px">Payment History</strong>
-        ${inv.balance_due > 0 && inv.status !== 'cancelled' ? `<button class="btn btn-primary btn-sm" onclick="openPaymentModal(${invoiceId})">Record Payment</button>` : ''}
+        <div style="display:flex;gap:6px">
+          ${inv.status !== 'cancelled' ? `<button class="btn btn-ghost btn-sm" onclick="openSendInvoiceModal(${invoiceId})">Send Invoice</button>` : ''}
+          ${inv.balance_due > 0 && inv.status !== 'cancelled' ? `<button class="btn btn-primary btn-sm" onclick="openPaymentModal(${invoiceId})">Record Payment</button>` : ''}
+        </div>
       </div>
       <div>
         ${data.payments.map(p => `
@@ -4380,6 +4404,25 @@ async function submitPayment() {
     openInvoiceDetail(currentInvoiceId);
     loadInvoices();
   } catch(e) { toast(e.message || 'Error recording payment','error'); }
+}
+
+let _sendInvoiceId = null;
+
+function openSendInvoiceModal(invoiceId) {
+  _sendInvoiceId = invoiceId;
+  openModal('send-invoice-modal');
+}
+
+async function confirmSendInvoice() {
+  const channels = getActiveChannels(document.getElementById('send-invoice-channels'));
+  if (!channels.length) return toast('Select at least one channel','error');
+  try {
+    await api(`/admin/invoice/${_sendInvoiceId}/send`, {
+      method: 'POST', body: JSON.stringify({channels})
+    });
+    closeModal('send-invoice-modal');
+    toast(`Invoice sent via ${channels.join(', ')}`);
+  } catch(e) { toast(e.message || 'Error sending invoice','error'); }
 }
 
 async function deleteInvoiceConfirm(invoiceId) {
@@ -5025,6 +5068,31 @@ function installApp() {
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('payment-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="submitPayment()">Record Payment</button>
+    </div>
+  </div>
+</div>
+
+<!-- Send Invoice -->
+<div class="modal-overlay" id="send-invoice-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <span class="modal-title">Send Invoice to Client</span>
+      <button class="modal-close" onclick="closeModal('send-invoice-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text3);margin-bottom:12px">Send the full breakdown — service fees, government fees, total, and balance due — directly to the client.</p>
+      <div class="form-group">
+        <label>Send Via</label>
+        <div class="channel-toggle" id="send-invoice-channels" style="margin:6px 0">
+          <button class="channel-btn active wa" onclick="toggleChannel(this,'wa')">WhatsApp</button>
+          <button class="channel-btn sms" onclick="toggleChannel(this,'sms')">SMS</button>
+          <button class="channel-btn active email" onclick="toggleChannel(this,'email')">Email</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('send-invoice-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmSendInvoice()">Send Invoice</button>
     </div>
   </div>
 </div>
