@@ -277,3 +277,84 @@ def send_calendar_reminder(to_email: str, title: str, event_type: str, start_at:
     def _run():
         _send_email(to_email, f"Reminder: {title}", email_text, email_html, "calendar_reminder")
     _notify_async(_run)
+
+def send_invoice(client_name: str, client_phone: str, client_email: str, invoice_no: str,
+                  line_items: list, subtotal: float, tax_amount: float, total: float,
+                  amount_paid: float, balance_due: float, due_date: str = "", channels: list = None):
+    """
+    Send an invoice breakdown to the client via WhatsApp/Email.
+    line_items: list of dicts with keys label, qty, unit_price, amount, type (govt|service)
+    """
+    if channels is None: channels = ["whatsapp", "email"]
+
+    govt_items    = [li for li in line_items if li.get("type") == "govt"]
+    service_items = [li for li in line_items if li.get("type") == "service"]
+    other_items   = [li for li in line_items if not li.get("type")]
+
+    def _text_block(items, heading):
+        if not items: return ""
+        lines = "\n".join(f"  • {i['label']}: ₹{i['amount']}" for i in items)
+        return f"\n{heading}:\n{lines}\n"
+
+    items_text = _text_block(govt_items, "Government/Embassy Fees") + \
+                 _text_block(service_items, "Agency Service Fees") + \
+                 _text_block(other_items, "Charges")
+
+    due_line = f"\nDue Date: {due_date}" if due_date else ""
+
+    wa_message = (
+        f"Hello {client_name}! 🧾\n\n"
+        f"Invoice {invoice_no} from Uniglobe MKOV Travel\n"
+        f"{items_text}\n"
+        f"Subtotal: ₹{subtotal}\n"
+        f"Tax: ₹{tax_amount}\n"
+        f"Total: ₹{total}\n"
+        f"Paid: ₹{amount_paid}\n"
+        f"Balance Due: ₹{balance_due}"
+        f"{due_line}\n\n"
+        f"Questions? Call +91-8010700700"
+    )
+    sms_message = f"Hi {client_name}, Invoice {invoice_no}: Total ₹{total}, Balance Due ₹{balance_due}.{due_line} — MKOV Travel"
+
+    def _rows_html(items):
+        return "".join(
+            f"<tr><td style='padding:6px 0'>{i['label']}</td>"
+            f"<td style='padding:6px 0;text-align:right'>₹{i['amount']}</td></tr>"
+            for i in items
+        )
+
+    section_html = ""
+    if govt_items:
+        section_html += f"<tr><td colspan='2' style='padding-top:12px;font-weight:bold;color:#b8860b;text-transform:uppercase;font-size:12px'>Government / Embassy Fees</td></tr>{_rows_html(govt_items)}"
+    if service_items:
+        section_html += f"<tr><td colspan='2' style='padding-top:12px;font-weight:bold;color:#00857a;text-transform:uppercase;font-size:12px'>Agency Service Fees</td></tr>{_rows_html(service_items)}"
+    if other_items:
+        section_html += _rows_html(other_items)
+
+    email_html = f'''<div style="font-family:Arial;max-width:600px;margin:auto;padding:20px">
+<div style="background:#0d3055;color:white;padding:24px;border-radius:8px 8px 0 0">
+<h1 style="margin:0;font-size:20px">Invoice {invoice_no}</h1>
+<p style="margin:4px 0 0;opacity:0.8">Uniglobe MKOV Travel</p>
+</div>
+<div style="background:#f9f9f9;padding:24px;border:1px solid #e0e0e0">
+<p>Dear {client_name},</p>
+<p>Please find your invoice breakdown below.</p>
+<table style="width:100%;border-collapse:collapse;font-size:14px">
+{section_html}
+<tr><td colspan="2" style="border-top:1px solid #ddd;padding-top:10px"></td></tr>
+<tr><td style="padding:4px 0;color:#666">Subtotal</td><td style="text-align:right">₹{subtotal}</td></tr>
+<tr><td style="padding:4px 0;color:#666">Tax</td><td style="text-align:right">₹{tax_amount}</td></tr>
+<tr><td style="padding:8px 0;font-weight:bold;border-top:1px solid #ddd">Total</td><td style="text-align:right;font-weight:bold;border-top:1px solid #ddd">₹{total}</td></tr>
+<tr><td style="padding:4px 0;color:#2e7d32">Paid</td><td style="text-align:right;color:#2e7d32">₹{amount_paid}</td></tr>
+<tr><td style="padding:4px 0;font-weight:bold;color:#c62828">Balance Due</td><td style="text-align:right;font-weight:bold;color:#c62828">₹{balance_due}</td></tr>
+</table>
+{f'<p style="margin-top:16px"><strong>Due Date:</strong> {due_date}</p>' if due_date else ''}
+<p style="color:#888;font-size:12px;margin-top:24px">Questions? Call +91-8010700700</p>
+</div></div>'''
+    email_text = f"Dear {client_name},\n\nInvoice {invoice_no}\n{items_text}\nTotal: ₹{total}\nBalance Due: ₹{balance_due}{due_line}"
+
+    def _run():
+        if "whatsapp" in channels: _send_whatsapp(client_phone, wa_message, "invoice_sent")
+        if "sms" in channels: _send_sms(client_phone, sms_message, "invoice_sent")
+        if "email" in channels: _send_email(client_email, f"Invoice {invoice_no} — Uniglobe MKOV Travel", email_text, email_html, "invoice_sent")
+    _notify_async(_run)
