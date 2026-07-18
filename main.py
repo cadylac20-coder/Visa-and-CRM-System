@@ -218,7 +218,15 @@ def health(): return {"status": "ok"}
 @app.get("/admin", response_class=HTMLResponse)
 def serve_admin():
     path = os.path.join(STATIC_DIR, "admin.html")
-    return HTMLResponse(open(path).read()) if os.path.exists(path) else HTMLResponse("Not found", 404)
+    if not os.path.exists(path):
+        return HTMLResponse("Not found", 404)
+    # Prevent the browser's own HTTP cache from serving a stale copy of
+    # the app shell — the service worker handles offline caching itself,
+    # so the underlying network response should always be fresh.
+    return HTMLResponse(
+        open(path).read(),
+        headers={"Cache-Control": "no-cache, must-revalidate"}
+    )
 
 @app.get("/client", response_class=HTMLResponse)
 def serve_client():
