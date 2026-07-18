@@ -539,7 +539,7 @@ tbody tr:hover{background:var(--surface2)}
           <div><h2>VFS Checklists</h2><p>Upload VFS PDFs, extract and edit requirements</p></div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-ghost btn-sm" onclick="openExportChecklistsModal()">Export to PDF</button>
-            <button class="btn btn-primary btn-sm" onclick="openModal('new-checklist-modal')">+ New from VFS PDF</button>
+            <button class="btn btn-primary btn-sm" onclick="openNewChecklistModal()">+ New from VFS PDF</button>
           </div>
         </div>
         <div class="card">
@@ -1107,17 +1107,16 @@ tbody tr:hover{background:var(--surface2)}
         </div>
         <div id="vfs-extracted" style="display:none">
           <div class="form-group">
-            <label>Extracted Text (review and clean up)</label>
-            <textarea id="vfs-raw-text" style="min-height:120px;font-family:var(--mono);font-size:11px"></textarea>
+            <label>Extracted Text (review, then click "Load as Items" below)</label>
+            <textarea id="vfs-raw-text" style="min-height:100px;font-family:var(--mono);font-size:11px"></textarea>
           </div>
-          <div class="form-group">
-            <label>Documents (one per line — edit as needed)</label>
-            <textarea id="vfs-docs-text" style="min-height:120px"></textarea>
-          </div>
+          <button type="button" class="btn btn-ghost btn-sm" style="margin-bottom:14px" onclick="loadExtractedTextAsItems()">Load Extracted Text as Items ↓</button>
         </div>
         <div class="form-group">
-          <label>Or type documents manually (one per line)</label>
-          <textarea id="vfs-manual-docs" placeholder="Passport&#10;Recent Photo&#10;Bank Statement (3 months)&#10;Hotel Booking&#10;Return Flight Ticket" style="min-height:100px"></textarea>
+          <label>Documents / Instructions</label>
+          <p style="font-size:11px;color:var(--text3);margin-top:2px;margin-bottom:8px">Each box is one item — it can be a short document name or a full paragraph of instructions. Boxes grow as you type.</p>
+          <div id="checklist-items-creator"></div>
+          <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="addChecklistItem('checklist-items-creator')">+ Add Item</button>
         </div>
         <div class="form-group">
           <label>Service Charge (INR)</label>
@@ -1811,20 +1810,28 @@ function handleVFSUpload(input) {
   const file = input.files[0];
   if (!file) return;
   document.getElementById('vfs-extracted').style.display = 'block';
-  document.getElementById('vfs-raw-text').value = `PDF uploaded: ${file.name}\n\nCould not extract text in browser. Please manually paste the document list below, or type the required documents in the "type manually" field.`;
-  toast('PDF uploaded — please type/paste documents below');
+  document.getElementById('vfs-raw-text').value = `PDF uploaded: ${file.name}\n\nCould not extract text in browser. Please paste the document list here, then click "Load Extracted Text as Items" below — or just add items directly further down.`;
+  toast('PDF uploaded — paste the document list and load it as items below');
+}
+
+function openNewChecklistModal() {
+  document.getElementById('vfs-country').value = '';
+  document.getElementById('vfs-visa-type').value = 'tourist';
+  document.getElementById('vfs-price').value = '';
+  document.getElementById('vfs-raw-text').value = '';
+  document.getElementById('vfs-extracted').style.display = 'none';
+  document.getElementById('checklist-items-creator').innerHTML = '';
+  addChecklistItem('checklist-items-creator');
+  openModal('new-checklist-modal');
 }
 
 async function saveVFSChecklist() {
   const country  = document.getElementById('vfs-country').value.trim();
   const type     = document.getElementById('vfs-visa-type').value;
   const price    = parseFloat(document.getElementById('vfs-price').value) || 0;
-  const manual   = document.getElementById('vfs-manual-docs').value;
-  const extracted= document.getElementById('vfs-docs-text').value;
-  const raw      = manual || extracted;
-  const docs     = raw.split('\n').map(d => d.trim()).filter(Boolean);
+  const docs     = getCurrentEditorDocs('checklist-items-creator');
 
-  if (!country || docs.length === 0) return toast('Enter country and at least one document','error');
+  if (!country || docs.length === 0) return toast('Enter country and at least one document/instruction','error');
 
   try {
     await api('/admin/checklist/create', {
@@ -1877,7 +1884,7 @@ function editChecklist(id) {
   document.getElementById('edit-checklist-country').value = cl.country;
   document.getElementById('edit-checklist-type').value = cl.visa_type;
   document.getElementById('edit-checklist-price').value = cl.base_price;
-  renderChecklistEditor(cl.documents);
+  renderChecklistEditor(cl.documents, 'checklist-items-editor');
   openModal('edit-checklist-modal');
 }
 
@@ -1886,36 +1893,43 @@ function autoGrowTextarea(el) {
   el.style.height = el.scrollHeight + 'px';
 }
 
-function renderChecklistEditor(docs) {
-  document.getElementById('checklist-items-editor').innerHTML = docs.map((d, i) => `
-    <div class="checklist-item" id="ci-${i}">
+function renderChecklistEditor(docs, containerId) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = docs.map((d, i) => `
+    <div class="checklist-item" id="${containerId}-item-${i}">
       <span class="drag-handle">⠿</span>
-      <textarea id="ci-val-${i}" rows="1" oninput="autoGrowTextarea(this)">${escapeHtml(d)}</textarea>
-      <button class="remove-item" onclick="removeChecklistItem(${i})">×</button>
+      <textarea id="${containerId}-val-${i}" rows="1" oninput="autoGrowTextarea(this)">${escapeHtml(d)}</textarea>
+      <button class="remove-item" onclick="document.getElementById('${containerId}-item-${i}').remove()">×</button>
     </div>
   `).join('');
   // Auto-size every box to fit its existing content (long paragraphs expand immediately)
-  document.querySelectorAll('#checklist-items-editor textarea').forEach(autoGrowTextarea);
+  container.querySelectorAll('textarea').forEach(autoGrowTextarea);
 }
 
-function addChecklistItem() {
-  const items = document.querySelectorAll('#checklist-items-editor .checklist-item');
-  const i = items.length;
+function addChecklistItem(containerId) {
+  containerId = containerId || 'checklist-items-editor';
+  const container = document.getElementById(containerId);
+  const i = container.querySelectorAll('.checklist-item').length;
   const div = document.createElement('div');
   div.className = 'checklist-item';
-  div.id = `ci-${i}`;
-  div.innerHTML = `<span class="drag-handle">⠿</span><textarea id="ci-val-${i}" rows="1" placeholder="Document name or paragraph of instructions..." oninput="autoGrowTextarea(this)"></textarea><button class="remove-item" onclick="this.closest('.checklist-item').remove()">×</button>`;
-  document.getElementById('checklist-items-editor').appendChild(div);
-  document.getElementById(`ci-val-${i}`).focus();
+  div.id = `${containerId}-item-${i}`;
+  div.innerHTML = `<span class="drag-handle">⠿</span><textarea id="${containerId}-val-${i}" rows="1" placeholder="Document name or a full paragraph of instructions..." oninput="autoGrowTextarea(this)"></textarea><button class="remove-item" onclick="this.closest('.checklist-item').remove()">×</button>`;
+  container.appendChild(div);
+  div.querySelector('textarea').focus();
 }
 
-function removeChecklistItem(i) {
-  document.getElementById(`ci-${i}`)?.remove();
-}
-
-function getCurrentEditorDocs() {
-  const boxes = document.querySelectorAll('#checklist-items-editor textarea');
+function getCurrentEditorDocs(containerId) {
+  containerId = containerId || 'checklist-items-editor';
+  const boxes = document.querySelectorAll(`#${containerId} textarea`);
   return Array.from(boxes).map(t => t.value.trim()).filter(Boolean);
+}
+
+function loadExtractedTextAsItems() {
+  const raw = document.getElementById('vfs-raw-text').value;
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return toast('No extracted text to load','error');
+  renderChecklistEditor(lines, 'checklist-items-creator');
+  toast(`Loaded ${lines.length} line(s) as items — merge any that belong together into one paragraph box`);
 }
 
 async function saveChecklist() {
