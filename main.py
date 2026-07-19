@@ -2143,6 +2143,97 @@ def send_invoice_to_client(invoice_id: int, data: SendInvoiceRequest, admin=Depe
     return {"status": "sent", "channels": data.channels}
 
 
+@app.get("/admin/staff-directory")
+def staff_directory(admin=Depends(require_admin)):
+    """Lightweight active-staff list for 'send to' pickers — no email/sensitive fields."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, name, role FROM admin_users WHERE active=1 ORDER BY name"
+    ).fetchall()
+    conn.close()
+    return {"staff": [dict(r) for r in rows]}
+
+
+class SendInvoiceToStaffRequest(BaseModel):
+    staff_id: int
+    note: Optional[str] = ""
+
+@app.post("/admin/invoice/{invoice_id}/send-to-staff")
+def send_invoice_to_staff(invoice_id: int, data: SendInvoiceToStaffRequest, admin=Depends(require_admin)):
+    """Share an invoice internally with another staff member — in-app message + email."""
+    conn = get_db()
+    inv = conn.execute("""
+        SELECT i.*, c.name as client_name, c.email as client_email, c.phone as client_phone
+        FROM invoices i JOIN clients c ON c.id = i.client_id
+        WHERE i.id=?
+    """, (invoice_id,)).fetchone()
+    if not inv:
+        conn.close()
+        raise HTTPException(404, "Invoice not found")
+
+    target = conn.execute(
+        "SELECT id, name, email FROM admin_users WHERE id=? AND active=1", (data.staff_id,)
+    ).fetchone()
+    if not target:
+        conn.close()
+        raise HTTPException(404, "Staff member not found or inactive")
+
+    d = dict(inv)
+    line_items  = json.loads(d["line_items_json"])
+    balance_due = round((d["total"] or 0) - (d["amount_paid"] or 0), 2)
+    govt_total    = sum(li["amount"] for li in line_items if li.get("type") == "govt")
+    service_total = sum(li["amount"] for li in line_items if li.get("type") == "service")
+
+    dm_message = (
+        f"📄 Invoice {d['invoice_no']} — {d['client_name']}\n"
+        f"Service Fee: ₹{service_total} | Govt Fee: ₹{govt_total}\n"
+        f"Total: ₹{d['total']} | Balance Due: ₹{balance_due}"
+        + (f"\n\nNote: {data.note}" if data.note else "")
+    )
+
+    sender = conn.execute("SELECT id FROM admin_users WHERE name=?", (admin["name"],)).fetchone()
+    conn.execute("""
+        INSERT INTO staff_direct_messages (from_id, from_name, to_id, to_name, message, is_ping)
+        VALUES (?,?,?,?,?,0)
+    """, (sender["id"] if sender else 0, admin["name"], target["id"], target["name"], dm_message))
+
+    if d["app_id"]:
+        conn.execute(
+            "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
+            (d["app_id"], f"admin:{admin['name']}", "Invoice shared internally",
+             f"{d['invoice_no']} sent to {target['name']}")
+        )
+    conn.commit()
+    conn.close()
+
+    # Also email the staff member — a reliable channel even if they haven't opened the app
+    try:
+        from notifier import _send_email
+        rows_html = "".join(
+            f"<tr><td style='padding:5px 0'>{li['label']}</td><td style='padding:5px 0;text-align:right'>₹{li['amount']}</td></tr>"
+            for li in line_items
+        )
+        email_html = f'''<div style="font-family:Arial;max-width:560px;margin:auto;padding:20px">
+<div style="background:#0d3055;color:white;padding:20px;border-radius:8px 8px 0 0">
+<h2 style="margin:0">Invoice {d['invoice_no']} shared with you</h2>
+</div>
+<div style="background:#f9f9f9;padding:20px;border:1px solid #e0e0e0">
+<p>{admin['name']} shared an invoice with you.</p>
+<p><strong>Client:</strong> {d['client_name']}</p>
+<table style="width:100%;border-collapse:collapse;font-size:13px">{rows_html}</table>
+<p style="margin-top:12px"><strong>Total:</strong> ₹{d['total']} &nbsp; <strong>Balance Due:</strong> ₹{balance_due}</p>
+{f"<p><strong>Note:</strong> {data.note}</p>" if data.note else ""}
+</div></div>'''
+        _send_email(
+            target["email"], f"Invoice {d['invoice_no']} shared with you",
+            dm_message, email_html, "invoice_shared_internal"
+        )
+    except Exception:
+        pass  # in-app message already saved; email is a best-effort extra
+
+    return {"status": "sent", "to": target["name"]}
+
+
 @app.post("/admin/invoice")
 def create_invoice(data: NewInvoiceRequest, admin=Depends(require_roles("visa_staff"))):
     conn = get_db()
