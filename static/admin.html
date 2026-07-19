@@ -4421,13 +4421,49 @@ async function submitPayment() {
 }
 
 let _sendInvoiceId = null;
+let _sendInvoiceMode = 'client';
 
 function openSendInvoiceModal(invoiceId) {
   _sendInvoiceId = invoiceId;
+  switchSendInvoiceTab('client');
+  populateSendInvoiceStaffDropdown();
   openModal('send-invoice-modal');
 }
 
+function switchSendInvoiceTab(mode) {
+  _sendInvoiceMode = mode;
+  document.getElementById('send-inv-tab-client').classList.toggle('active', mode === 'client');
+  document.getElementById('send-inv-tab-staff').classList.toggle('active', mode === 'staff');
+  document.getElementById('send-inv-panel-client').style.display = mode === 'client' ? 'block' : 'none';
+  document.getElementById('send-inv-panel-staff').style.display = mode === 'staff' ? 'block' : 'none';
+}
+
+async function populateSendInvoiceStaffDropdown() {
+  const sel = document.getElementById('send-inv-staff-select');
+  try {
+    const data = await api('/admin/staff-directory');
+    sel.innerHTML = '<option value="">Select staff member...</option>' +
+      data.staff.map(s => `<option value="${s.id}">${s.name} — ${roleLabel(s.role)}</option>`).join('');
+  } catch(e) {
+    sel.innerHTML = '<option value="">Could not load staff list</option>';
+  }
+}
+
 async function confirmSendInvoice() {
+  if (_sendInvoiceMode === 'staff') {
+    const staffId = document.getElementById('send-inv-staff-select').value;
+    if (!staffId) return toast('Select a staff member','error');
+    const note = document.getElementById('send-inv-staff-note').value.trim();
+    try {
+      const result = await api(`/admin/invoice/${_sendInvoiceId}/send-to-staff`, {
+        method: 'POST', body: JSON.stringify({staff_id: parseInt(staffId), note})
+      });
+      closeModal('send-invoice-modal');
+      toast(`Invoice shared with ${result.to}`);
+    } catch(e) { toast(e.message || 'Error sharing invoice','error'); }
+    return;
+  }
+
   const channels = getActiveChannels(document.getElementById('send-invoice-channels'));
   if (!channels.length) return toast('Select at least one channel','error');
   try {
@@ -5088,25 +5124,48 @@ function installApp() {
 
 <!-- Send Invoice -->
 <div class="modal-overlay" id="send-invoice-modal">
-  <div class="modal" style="max-width:380px">
+  <div class="modal" style="max-width:420px">
     <div class="modal-header">
-      <span class="modal-title">Send Invoice to Client</span>
+      <span class="modal-title">Send Invoice</span>
       <button class="modal-close" onclick="closeModal('send-invoice-modal')">×</button>
     </div>
     <div class="modal-body">
-      <p style="font-size:13px;color:var(--text3);margin-bottom:12px">Send the full breakdown — service fees, government fees, total, and balance due — directly to the client.</p>
-      <div class="form-group">
-        <label>Send Via</label>
-        <div class="channel-toggle" id="send-invoice-channels" style="margin:6px 0">
-          <button class="channel-btn active wa" onclick="toggleChannel(this,'wa')">WhatsApp</button>
-          <button class="channel-btn sms" onclick="toggleChannel(this,'sms')">SMS</button>
-          <button class="channel-btn active email" onclick="toggleChannel(this,'email')">Email</button>
+      <div class="tabs" style="margin-bottom:16px">
+        <button class="tab active" id="send-inv-tab-client" onclick="switchSendInvoiceTab('client')">To Client</button>
+        <button class="tab" id="send-inv-tab-staff" onclick="switchSendInvoiceTab('staff')">To Staff Member</button>
+      </div>
+
+      <!-- To client -->
+      <div id="send-inv-panel-client">
+        <p style="font-size:13px;color:var(--text3);margin-bottom:12px">Send the full breakdown — service fees, government fees, total, and balance due — directly to the client.</p>
+        <div class="form-group">
+          <label>Send Via</label>
+          <div class="channel-toggle" id="send-invoice-channels" style="margin:6px 0">
+            <button class="channel-btn active wa" onclick="toggleChannel(this,'wa')">WhatsApp</button>
+            <button class="channel-btn sms" onclick="toggleChannel(this,'sms')">SMS</button>
+            <button class="channel-btn active email" onclick="toggleChannel(this,'email')">Email</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- To staff -->
+      <div id="send-inv-panel-staff" style="display:none">
+        <p style="font-size:13px;color:var(--text3);margin-bottom:12px">Share this invoice internally — the staff member gets an in-app message and an email.</p>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Staff Member</label>
+          <select id="send-inv-staff-select" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:9px 12px;color:var(--text);font-size:13px;outline:none">
+            <option value="">Select staff member...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Note (optional)</label>
+          <textarea id="send-inv-staff-note" placeholder="e.g. Please review before I send this to the client" style="min-height:70px"></textarea>
         </div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('send-invoice-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmSendInvoice()">Send Invoice</button>
+      <button class="btn btn-primary" id="send-invoice-confirm-btn" onclick="confirmSendInvoice()">Send Invoice</button>
     </div>
   </div>
 </div>
