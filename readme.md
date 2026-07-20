@@ -2,8 +2,8 @@
 
 Internal staff CRM for Uniglobe MKOV Travel — visa applications, client records, document vault, invoicing, leads, and team communication. Staff-only, not client-facing.
 
-**Live app:** `https://your-app.onrender.com/admin`
-**API docs (Swagger):** `https://your-app.onrender.com/docs`
+**Live app:** `https://visa-and-crm-system.onrender.com/admin`
+**API docs (Swagger):** `https://visa-and-crm-system.onrender.com/docs`
 
 ---
 
@@ -21,7 +21,7 @@ Internal staff CRM for Uniglobe MKOV Travel — visa applications, client record
 
 ## Quick Start
 
-1. Go to `https://your-app.onrender.com/admin`
+1. Go to `https://visa-and-crm-system.onrender.com/admin`
 2. Log in with your staff email + password (ask your Super Admin if you don't have one)
 3. Install it as an app on your phone: Android gets an "Install App" button in the top bar; iPhone — open in Safari → Share → Add to Home Screen
 
@@ -109,7 +109,7 @@ Download applications, clients, invoices, or hotel/package manifests as CSV/PDF 
 
 Since a fix applied to `admin.html`'s `api()` helper, every error toast should show the *actual* backend reason (e.g. "Client not found") instead of a bare status code. If you see a generic error:
 1. Open browser DevTools (F12) → Network tab → click the failed request → check the Response tab for the real error message
-2. Open `https://your-app.onrender.com/docs`, find the matching endpoint, click "Try it out," and reproduce the exact call to see the full error
+2. Open `https://visa-and-crm-system.onrender.com/docs`, find the matching endpoint, click "Try it out," and reproduce the exact call to see the full error
 
 ### A button does nothing when clicked
 
@@ -135,7 +135,7 @@ This exact bug happened once: a wrapper function was added around `nav()` using 
 
 ### Service worker / PWA install warning in console
 
-If you see `Failed to register a ServiceWorker ... 404` — this is expected and harmless if you're previewing `admin.html` outside of the real deployed app (e.g. in a design/preview tool). The service worker only exists at `/sw.js` on your actual Render domain. It will register correctly once visited at your real `https://your-app.onrender.com/admin` URL. If it still fails there, confirm `static/sw.js` exists in the repo and that `main.py` still has the `/sw.js` and `/manifest.json` routes.
+If you see `Failed to register a ServiceWorker ... 404` — this is expected and harmless if you're previewing `admin.html` outside of the real deployed app (e.g. in a design/preview tool). The service worker only exists at `/sw.js` on your actual Render domain. It will register correctly once visited at your real `https://visa-and-crm-system.onrender.com/admin` URL. If it still fails there, confirm `static/sw.js` exists in the repo and that `main.py` still has the `/sw.js` and `/manifest.json` routes.
 
 ### Passport OCR isn't extracting anything
 
