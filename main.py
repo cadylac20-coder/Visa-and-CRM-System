@@ -6,7 +6,7 @@ import uuid
 import json
 import shutil
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 # All timestamps in this system are in IST (Asia/Kolkata, UTC+5:30)
@@ -1853,15 +1853,17 @@ def list_calendar_events(
 def upcoming_calendar_events(admin=Depends(require_admin)):
     """Next 14 days of events — for dashboard widget."""
     conn = get_db()
+    now_str = now_ist_str()
+    later_str = (now_ist() + timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%S")
     rows = conn.execute("""
         SELECT e.*, c.name as client_name, l.name as lead_name
         FROM calendar_events e
         LEFT JOIN clients c ON c.id = e.client_id
         LEFT JOIN leads l ON l.id = e.lead_id
-        WHERE e.start_at >= datetime('now') AND e.start_at <= datetime('now', '+14 day')
+        WHERE e.start_at >= ? AND e.start_at <= ?
         ORDER BY e.start_at ASC
         LIMIT 20
-    """).fetchall()
+    """, (now_str, later_str)).fetchall()
     conn.close()
     return {"events": [dict(r) for r in rows]}
 
@@ -1935,6 +1937,7 @@ def check_due_reminders(admin=Depends(require_admin)):
     staff member (based on whether they've already dismissed it).
     """
     conn = get_db()
+    now_str = now_ist_str()
 
     # 1) Send any due, unsent email reminders
     due_for_email = conn.execute("""
@@ -1942,8 +1945,8 @@ def check_due_reminders(admin=Depends(require_admin)):
         WHERE reminder_minutes_before IS NOT NULL
           AND reminder_sent = 0
           AND reminder_email IS NOT NULL
-          AND datetime(start_at, '-' || reminder_minutes_before || ' minutes') <= datetime('now')
-    """).fetchall()
+          AND datetime(start_at, '-' || reminder_minutes_before || ' minutes') <= datetime(?)
+    """, (now_str,)).fetchall()
 
     for ev in due_for_email:
         send_calendar_reminder(
@@ -1962,9 +1965,9 @@ def check_due_reminders(admin=Depends(require_admin)):
     candidates = conn.execute("""
         SELECT * FROM calendar_events
         WHERE reminder_minutes_before IS NOT NULL
-          AND start_at >= datetime('now')
-          AND datetime(start_at, '-' || reminder_minutes_before || ' minutes') <= datetime('now')
-    """).fetchall()
+          AND start_at >= datetime(?)
+          AND datetime(start_at, '-' || reminder_minutes_before || ' minutes') <= datetime(?)
+    """, (now_str, now_str)).fetchall()
 
     popups = []
     for ev in candidates:
@@ -2391,9 +2394,9 @@ def _log_staff_activity(conn, staff_name: str, staff_role: str, action: str,
     ).fetchone()
     staff_id = staff_row["id"] if staff_row else None
     conn.execute("""
-        INSERT INTO staff_activity_log (staff_id, staff_name, staff_role, action, detail, session_id)
-        VALUES (?,?,?,?,?,?)
-    """, (staff_id, staff_name, staff_role, action, detail, session_id))
+        INSERT INTO staff_activity_log (staff_id, staff_name, staff_role, action, detail, session_id, created_at)
+        VALUES (?,?,?,?,?,?,?)
+    """, (staff_id, staff_name, staff_role, action, detail, session_id, now_ist_str()))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
