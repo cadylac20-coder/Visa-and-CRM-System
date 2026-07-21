@@ -198,22 +198,6 @@ tbody tr:hover{background:var(--surface2)}
 .vfs-split{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 .parsed-text{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:14px;font-size:12px;font-family:var(--mono);color:var(--text2);min-height:200px;max-height:300px;overflow-y:auto;white-space:pre-wrap;line-height:1.6}
 
-/* ── Packages ── */
-.packages-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
-.package-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;transition:all .15s}
-.package-card:hover{border-color:var(--border2);box-shadow:var(--shadow)}
-.package-header{background:linear-gradient(135deg,var(--navy),#2d4a7a);padding:16px;position:relative}
-.package-flag{font-size:28px;margin-bottom:4px}
-.package-name{font-size:15px;font-weight:700;color:white}
-.package-type{font-size:11px;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:.5px}
-.package-body{padding:16px}
-.package-price{font-size:22px;font-weight:700;color:var(--teal);margin-bottom:12px}
-.package-price span{font-size:13px;color:var(--text3);font-weight:400}
-.package-docs{list-style:none;margin-bottom:14px}
-.package-docs li{font-size:12px;color:var(--text2);padding:4px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
-.package-docs li::before{content:'•';color:var(--teal);font-size:16px;line-height:1}
-.package-actions{display:flex;gap:8px}
-
 /* ── Send message ── */
 .channel-toggle{display:flex;gap:8px;margin:12px 0}
 .channel-btn{padding:7px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:2px solid var(--border);background:transparent;color:var(--text3);transition:all .15s;font-family:var(--font)}
@@ -328,10 +312,6 @@ tbody tr:hover{background:var(--surface2)}
       <button class="nav-item" data-page="vfs" onclick="nav('vfs')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         VFS Checklists
-      </button>
-      <button class="nav-item" data-page="packages" onclick="nav('packages')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-        Packages
       </button>
       <button class="nav-item" data-page="messages" onclick="nav('messages')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -546,15 +526,6 @@ tbody tr:hover{background:var(--surface2)}
           <div class="card-title">Saved Checklists</div>
           <div id="checklists-list"></div>
         </div>
-      </div>
-
-      <!-- PACKAGES -->
-      <div class="view" id="view-packages">
-        <div class="page-header">
-          <div><h2>Visa Packages</h2><p>Standard packages with pricing and document requirements</p></div>
-          <button class="btn btn-primary btn-sm" onclick="openModal('new-package-modal')">+ New Package</button>
-        </div>
-        <div class="packages-grid" id="packages-grid"></div>
       </div>
 
       <!-- LETTER TEMPLATES -->
@@ -1170,64 +1141,6 @@ tbody tr:hover{background:var(--surface2)}
   </div>
 </div>
 
-<!-- New Package -->
-<div class="modal-overlay" id="new-package-modal">
-  <div class="modal">
-    <div class="modal-header">
-      <span class="modal-title">New Visa Package</span>
-      <button class="modal-close" onclick="closeModal('new-package-modal')">×</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-grid">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Country</label>
-            <input type="text" id="pkg-country" placeholder="UAE">
-          </div>
-          <div class="form-group">
-            <label>Visa Type</label>
-            <select id="pkg-type">
-              <option>tourist</option><option>business</option><option>student</option><option>work</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Package Name</label>
-            <input type="text" id="pkg-name" placeholder="UAE Tourist Standard">
-          </div>
-          <div class="form-group">
-            <label>Price (INR)</label>
-            <input type="number" id="pkg-price" placeholder="5000">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Processing Time</label>
-            <input type="text" id="pkg-processing" placeholder="1-2 working days">
-          </div>
-          <div class="form-group">
-            <label>Visa Validity</label>
-            <input type="text" id="pkg-validity" placeholder="30 days">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Documents (one per line)</label>
-          <textarea id="pkg-docs" placeholder="Passport&#10;Photo&#10;Bank Statement&#10;Hotel Booking&#10;Return Flight"></textarea>
-        </div>
-        <div class="form-group">
-          <label>Notes</label>
-          <input type="text" id="pkg-notes" placeholder="e.g. Embassy appointment required">
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('new-package-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="savePackage()">Save Package</button>
-    </div>
-  </div>
-</div>
-
 <!-- New/Edit Letter Template Modal -->
 <div class="modal-overlay" id="new-letter-template-modal">
   <div class="modal" style="max-width:600px">
@@ -1272,8 +1185,8 @@ tbody tr:hover{background:var(--surface2)}
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('new-letter-template-modal')">Cancel</button>
-      <button class="btn btn-primary" id="lt-save-btn" onclick="saveLetterTemplate()">Save Template</button>
+      <button class="btn btn-ghost" onclick="cancelLetterTemplateChanges()">Cancel Changes</button>
+      <button class="btn btn-primary" id="lt-save-btn" onclick="saveLetterTemplate()">Save Changes</button>
     </div>
   </div>
 </div>
@@ -1367,7 +1280,6 @@ const API = 'https://visa-and-crm-system.onrender.com';
 let TOKEN = '';
 let currentAppId = '';
 let editingChecklistId = null;
-let packages = JSON.parse(localStorage.getItem('mkov_packages') || '[]');
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 async function doLogin() {
@@ -1391,7 +1303,6 @@ async function doLogin() {
     document.getElementById('app').style.display = 'flex';
     applyRoleVisibility(data.role);
     loadDashboard();
-    renderPackages();
     loadChecklistsFromServer().then(() => {
       renderChecklists();
       loadChecklistsForSelect();
@@ -1423,7 +1334,6 @@ const ROLE_PAGE_ACCESS = {
   applications: ['visa_staff','visa_admin'],
   clients: ['sales','visa_staff','sales_admin','visa_admin'],
   vfs: ['visa_staff','visa_admin'],
-  packages: ['visa_staff','sales','sales_admin','visa_admin'],
   messages: ['sales','visa_staff','sales_admin','visa_admin'],
   'client-profile': ['sales','visa_staff','sales_admin','visa_admin'],
   'expiry-tracker': ['sales','visa_staff','sales_admin','visa_admin'],
@@ -1472,7 +1382,7 @@ function api(path, opts={}) {
 // ── Navigation ────────────────────────────────────────────────────────────────
 const PAGE_TITLES = {
   'client-profile':'Client Profile', letters:'Letter Templates', dashboard:'Dashboard', applications:'Applications', clients:'Clients',
-  vfs:'VFS Checklists', packages:'Packages', messages:'Send Message', export:'Export CRM',
+  vfs:'VFS Checklists', messages:'Send Message', export:'Export CRM',
   leads:'Leads & Follow-ups', calendar:'Calendar', invoices:'Invoices & Payments', 'staff-management':'Staff & Roles',
   'staff-monitoring':'Staff Monitor', 'expiry-tracker':'Passport Expiry Tracker', 'quote-calculator':'Instant Quote Calculator',
   'team-chat':'Team Chat'
@@ -1492,7 +1402,6 @@ function nav(page) {
   else if (page === 'applications')     loadApplications();
   else if (page === 'clients')          loadClients();
   else if (page === 'messages')         loadRecentComms();
-  else if (page === 'packages')         renderPackages();
   else if (page === 'vfs')              { loadChecklistsFromServer().then(renderChecklists); }
   else if (page === 'client-profile')   loadAllClients();
   else if (page === 'letters')          loadLetterTemplates();
@@ -2069,71 +1978,8 @@ async function fileToBase64(file) {
   });
 }
 
-// ── Packages ──────────────────────────────────────────────────────────────────
+// ── Country flags (used by VFS checklist views) ─────────────────────────────
 const FLAGS = {UAE:'🇦🇪',USA:'🇺🇸',UK:'🇬🇧',Canada:'🇨🇦',Australia:'🇦🇺',Singapore:'🇸🇬',Germany:'🇩🇪',Japan:'🇯🇵',France:'🇫🇷',Italy:'🇮🇹',Thailand:'🇹🇭',Bali:'🇮🇩'};
-
-function savePackage() {
-  const pkg = {
-    id: Date.now(),
-    country: document.getElementById('pkg-country').value.trim(),
-    type: document.getElementById('pkg-type').value,
-    name: document.getElementById('pkg-name').value.trim(),
-    price: parseFloat(document.getElementById('pkg-price').value) || 0,
-    processing: document.getElementById('pkg-processing').value.trim(),
-    validity: document.getElementById('pkg-validity').value.trim(),
-    documents: document.getElementById('pkg-docs').value.split('\n').map(d => d.trim()).filter(Boolean),
-    notes: document.getElementById('pkg-notes').value.trim(),
-  };
-  if (!pkg.country || !pkg.name) return toast('Fill required fields','error');
-  packages.push(pkg);
-  localStorage.setItem('mkov_packages', JSON.stringify(packages));
-  closeModal('new-package-modal');
-  renderPackages();
-  toast('Package saved');
-}
-
-function deletePackage(id) {
-  if (!confirm('Delete this package?')) return;
-  packages = packages.filter(p => p.id !== id);
-  localStorage.setItem('mkov_packages', JSON.stringify(packages));
-  renderPackages();
-}
-
-function renderPackages() {
-  const grid = document.getElementById('packages-grid');
-  if (packages.length === 0) {
-    grid.innerHTML = '<div class="card" style="grid-column:1/-1"><p style="color:var(--text3);font-size:13px">No packages yet. Click "+ New Package" to add one.</p></div>';
-    return;
-  }
-  grid.innerHTML = packages.map(p => `
-    <div class="package-card">
-      <div class="package-header">
-        <div class="package-flag">${FLAGS[p.country] || '🌍'}</div>
-        <div class="package-name">${p.name}</div>
-        <div class="package-type">${p.type} · ${p.processing}</div>
-      </div>
-      <div class="package-body">
-        <div class="package-price">₹${p.price.toLocaleString('en-IN')} <span>/ application</span></div>
-        <ul class="package-docs">
-          ${p.documents.slice(0,5).map(d => `<li>${d}</li>`).join('')}
-          ${p.documents.length > 5 ? `<li style="color:var(--text3)">+${p.documents.length-5} more</li>` : ''}
-        </ul>
-        ${p.notes ? `<p style="font-size:11px;color:var(--text3);margin-bottom:12px">${p.notes}</p>` : ''}
-        <div class="package-actions">
-          <button class="btn btn-ghost btn-sm" onclick="copyPackageText(${p.id})">Copy</button>
-          <button class="btn btn-danger btn-sm" onclick="deletePackage(${p.id})">Delete</button>
-        </div>
-      </div>
-    </div>
-  `).join('');
-}
-
-function copyPackageText(id) {
-  const p = packages.find(p => p.id === id);
-  if (!p) return;
-  const text = `${p.name.toUpperCase()}\nType: ${p.type} | Processing: ${p.processing} | Validity: ${p.validity}\nPrice: INR ${p.price.toLocaleString('en-IN')}\n\nDocuments Required:\n${p.documents.map((d,i) => `${i+1}. ${d}`).join('\n')}\n\n${p.notes}`;
-  navigator.clipboard.writeText(text).then(() => toast('Package details copied'));
-}
 
 // ══════════════════════════════════════════════════════════════════════════
 // LETTER TEMPLATES — cover, authority, invitation, performa
@@ -2223,6 +2069,12 @@ function editLetterTemplate(id) {
   openModal('new-letter-template-modal');
 }
 
+function cancelLetterTemplateChanges() {
+  // Discard any edits in the form and close without saving.
+  editingLetterTemplateId = null;
+  closeModal('new-letter-template-modal');
+}
+
 async function saveLetterTemplate() {
   const body = {
     template_type: document.getElementById('lt-type').value,
@@ -2232,6 +2084,11 @@ async function saveLetterTemplate() {
     body_template: document.getElementById('lt-body').value,
   };
   if (!body.subject || !body.body_template) return toast('Subject and body are required','error');
+
+  const saveBtn = document.getElementById('lt-save-btn');
+  const originalLabel = saveBtn.textContent;
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
   try {
     if (editingLetterTemplateId) {
       await api(`/admin/letter-templates/${editingLetterTemplateId}`, {method:'PUT', body: JSON.stringify(body)});
@@ -2240,9 +2097,18 @@ async function saveLetterTemplate() {
       await api('/admin/letter-templates', {method:'POST', body: JSON.stringify(body)});
       toast('Template created');
     }
+    editingLetterTemplateId = null;
     closeModal('new-letter-template-modal');
-    loadLetterTemplates();
-  } catch(e) { toast(e.message || 'Error saving template','error'); }
+    await loadLetterTemplates();
+  } catch(e) {
+    // Keep the modal open on failure so nothing typed is lost, and surface
+    // the real server error instead of failing silently.
+    console.error('Failed to save letter template:', e);
+    toast(e.message || 'Error saving template — changes were not saved','error');
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalLabel;
+  }
 }
 
 async function deleteLetterTemplate(id) {
@@ -3830,6 +3696,16 @@ function leadStatusClass(status) {
   return {new:'pending', contacted:'review', qualified:'docs_received', quoted:'submitted', won:'approved', lost:'rejected'}[status] || 'pending';
 }
 
+// Builds a YYYY-MM-DD string from a Date's LOCAL components (not UTC).
+// Using .toISOString() here is wrong for IST (UTC+5:30): it converts to
+// UTC first, which silently rolls local midnight back to the previous day.
+function toLocalDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function formatDateTime(s) {
   if (!s) return '—';
   // Timestamps from DB are already IST; add 'Z' only if no timezone info present
@@ -4020,8 +3896,8 @@ async function renderCalendarGrid() {
   const startPad   = firstDay.getDay();
   const totalDays  = lastDay.getDate();
 
-  const rangeStart = new Date(year, month, 1 - startPad).toISOString().slice(0,10);
-  const rangeEnd   = new Date(year, month + 1, 6).toISOString().slice(0,10);
+  const rangeStart = toLocalDateStr(new Date(year, month, 1 - startPad));
+  const rangeEnd   = toLocalDateStr(new Date(year, month + 1, 6));
 
   try {
     const data = await api(`/admin/calendar?start=${rangeStart}&end=${rangeEnd}`);
@@ -4035,11 +3911,11 @@ async function renderCalendarGrid() {
   });
   for (let i = 0; i < startPad; i++) html += '<div></div>';
 
-  const todayStr = new Date().toISOString().slice(0,10);
+  const todayStr = toLocalDateStr(new Date());
 
   for (let day = 1; day <= totalDays; day++) {
     const dateObj = new Date(year, month, day);
-    const dateStr = dateObj.toISOString().slice(0,10);
+    const dateStr = toLocalDateStr(dateObj);
     const dayEvents = calendarEvents.filter(e => (e.start_at || '').slice(0,10) === dateStr);
     const isToday = dateStr === todayStr;
     html += `
