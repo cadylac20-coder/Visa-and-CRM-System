@@ -1309,6 +1309,7 @@ tbody tr:hover{background:var(--surface2)}
 const API = 'https://visa-and-crm-system.onrender.com';
 let TOKEN = '';
 let currentAppId = '';
+let currentAppClientId = null;
 let editingChecklistId = null;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -1525,6 +1526,7 @@ async function viewApp(appId) {
   try {
     const data = await api(`/admin/application/${appId}`);
     const a = data.application;
+    currentAppClientId = a.client_id || null;
     document.getElementById('detail-app-id').textContent = a.app_id;
     document.getElementById('detail-client-name').textContent = `${a.client_name} — ${a.destination} ${a.visa_type}`;
     document.getElementById('detail-status-badge').textContent = a.status.replace('_',' ');
@@ -3128,8 +3130,22 @@ async function submitAdminDocUpload() {
       body: formData
     });
     if (!r.ok) throw new Error();
+    const result = await r.json();
     closeModal('admin-upload-modal');
     toast(`${docType.replace(/_/g,' ')} uploaded`);
+
+    if (docType === 'passport' && result.extracted && Object.keys(result.extracted).length) {
+      if (result.extracted.ocr_unavailable) {
+        toast('OCR isn\'t set up on this server — add the passport expiry manually','error');
+        if (currentAppClientId) promptManualPassportEntry(currentAppClientId);
+      } else if (result.extracted.error) {
+        toast('Could not read the scan clearly — add the passport expiry manually','error');
+        if (currentAppClientId) promptManualPassportEntry(currentAppClientId);
+      } else if (!result.extracted.expiry_date) {
+        toast('Expiry date wasn\'t detected — add it manually so this client shows up on the Expiry Tracker','error');
+        if (currentAppClientId) promptManualPassportEntry(currentAppClientId);
+      }
+    }
     viewApp(_uploadAppId);
   } catch(e) { toast(e.message || 'Upload failed','error'); }
 }
