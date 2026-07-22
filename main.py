@@ -31,6 +31,25 @@ from notifier import send_checklist, send_status_update, send_reminder, send_cal
 
 init_db()
 
+# --- Lightweight, idempotent migration: new free-form checklist columns ------
+def _migrate_schema():
+    conn = get_db()
+    existing_cols = {r["name"] for r in conn.execute("PRAGMA table_info(custom_checklists)").fetchall()}
+    if "format_mode" not in existing_cols:
+        conn.execute("ALTER TABLE custom_checklists ADD COLUMN format_mode TEXT DEFAULT 'list'")
+    if "free_text" not in existing_cols:
+        conn.execute("ALTER TABLE custom_checklists ADD COLUMN free_text TEXT DEFAULT ''")
+    conn.commit()
+    conn.close()
+
+_migrate_schema()
+
+def require_lead_assigner(admin=Depends(require_admin)):
+    """Assigning leads to staff is limited to Sales Admin, Visa Admin, and Superadmin."""
+    if admin.get("role") not in ("sales_admin", "visa_admin", "superadmin"):
+        raise HTTPException(403, "Only Sales Admin, Visa Admin, or Superadmin can assign leads")
+    return admin
+
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -86,6 +105,8 @@ class CustomChecklistData(BaseModel):
     base_price: float = 0
     discount_percentage: float = 0
     typical_govt_fee: float = 0
+    format_mode: str = "list"          # "list" (numbered checklist) or "freeform" (typed as-is)
+    free_text: Optional[str] = ""      # used when format_mode == "freeform"
 
 class UpdateChecklistData(BaseModel):
     country: Optional[str] = None
@@ -94,9 +115,12 @@ class UpdateChecklistData(BaseModel):
     discount_percentage: Optional[float] = None
     documents: Optional[list] = None
     typical_govt_fee: Optional[float] = None
+    format_mode: Optional[str] = None
+    free_text: Optional[str] = None
 
 class ExportChecklistsRequest(BaseModel):
     checklist_ids: list[int]
+    letter_template_ids: list[int] = []
 
 class ClientDiscountData(BaseModel):
     client_id: int; checklist_id: int
@@ -139,6 +163,9 @@ class UpdateLeadRequest(BaseModel):
     status:      Optional[str] = None
     assigned_to: Optional[int] = None
     notes:       Optional[str] = None
+
+class AssignLeadRequest(BaseModel):
+    assigned_to: Optional[int] = None   # null clears the assignment
 
 class NewFollowupRequest(BaseModel):
     lead_id: int; due_at: str; note: Optional[str] = ""; channel: str = "call"
@@ -470,11 +497,11 @@ def create_checklist(data: CustomChecklistData, admin=Depends(require_roles("vis
     conn = get_db()
     try:
         conn.execute("""INSERT INTO custom_checklists
-            (country, visa_type, name, description, documents_json, base_price, discount_percentage, final_price, typical_govt_fee, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (country, visa_type, name, description, documents_json, base_price, discount_percentage, final_price, typical_govt_fee, created_by, format_mode, free_text)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (data.country, data.visa_type, data.name, data.description,
              json.dumps(data.documents), data.base_price, data.discount_percentage, final_price,
-             data.typical_govt_fee, admin["name"]))
+             data.typical_govt_fee, admin["name"], data.format_mode or "list", data.free_text or ""))
         conn.commit()
         new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         conn.close()
@@ -530,6 +557,10 @@ def update_checklist(checklist_id: int, data: UpdateChecklistData, admin=Depends
         conn.execute("UPDATE custom_checklists SET discount_percentage=?, final_price=? WHERE id=?", (data.discount_percentage, fp, checklist_id))
     if data.documents is not None:
         conn.execute("UPDATE custom_checklists SET documents_json=? WHERE id=?", (json.dumps(data.documents), checklist_id))
+    if data.format_mode is not None:
+        conn.execute("UPDATE custom_checklists SET format_mode=? WHERE id=?", (data.format_mode, checklist_id))
+    if data.free_text is not None:
+        conn.execute("UPDATE custom_checklists SET free_text=? WHERE id=?", (data.free_text, checklist_id))
     if data.typical_govt_fee is not None:
         conn.execute("UPDATE custom_checklists SET typical_govt_fee=? WHERE id=?", (data.typical_govt_fee, checklist_id))
     conn.execute("UPDATE custom_checklists SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (checklist_id,))
@@ -625,8 +656,9 @@ def quote_available_countries(admin=Depends(require_admin)):
 def export_checklists_pdf(data: ExportChecklistsRequest, admin=Depends(require_admin)):
     """
     Generate a single PDF containing one formatted page per selected
-    checklist, in the standard VFS-style layout: header block (country,
-    visa type, service charge) followed by a numbered document list.
+    checklist (numbered list, or freely-typed text if the checklist was
+    saved with format_mode='freeform'), optionally followed by one page
+    per selected letter template.
     """
     if not data.checklist_ids:
         raise HTTPException(400, "Select at least one checklist to export")
@@ -637,6 +669,7 @@ def export_checklists_pdf(data: ExportChecklistsRequest, admin=Depends(require_a
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
+    from xml.sax.saxutils import escape as _esc
 
     conn = get_db()
     placeholders = ",".join("?" * len(data.checklist_ids))
@@ -644,6 +677,14 @@ def export_checklists_pdf(data: ExportChecklistsRequest, admin=Depends(require_a
         f"SELECT * FROM custom_checklists WHERE id IN ({placeholders}) ORDER BY country, visa_type",
         data.checklist_ids
     ).fetchall()
+
+    letter_rows = []
+    if data.letter_template_ids:
+        lt_placeholders = ",".join("?" * len(data.letter_template_ids))
+        letter_rows = conn.execute(
+            f"SELECT * FROM letter_templates WHERE id IN ({lt_placeholders}) ORDER BY template_type",
+            data.letter_template_ids
+        ).fetchall()
     conn.close()
 
     if not rows:
@@ -671,13 +712,20 @@ def export_checklists_pdf(data: ExportChecklistsRequest, admin=Depends(require_a
     doc_item_style = ParagraphStyle(
         "DocItem", parent=styles["Normal"], fontSize=10.5, leading=16, spaceAfter=4
     )
+    freeform_style = ParagraphStyle(
+        "Freeform", parent=styles["Normal"], fontSize=10.5, leading=15, spaceAfter=6
+    )
     footer_style = ParagraphStyle(
         "Footer", parent=styles["Normal"], fontSize=8,
         textColor=colors.HexColor("#888888"), spaceBefore=20
     )
 
+    total_pages = len(rows) + len(letter_rows)
     story = []
-    for i, row in enumerate(rows):
+    page_num = 0
+
+    for row in rows:
+        page_num += 1
         cl = dict(row)
         documents = json.loads(cl["documents_json"])
 
@@ -706,8 +754,18 @@ def export_checklists_pdf(data: ExportChecklistsRequest, admin=Depends(require_a
             story.append(Paragraph(f"Service Charge: Rs. {cl['final_price']:.2f}", section_style))
 
         story.append(Paragraph("Required Documents", section_style))
-        for idx, item in enumerate(documents, 1):
-            story.append(Paragraph(f"{idx}. [ ] {item}", doc_item_style))
+
+        if cl.get("format_mode") == "freeform" and (cl.get("free_text") or "").strip():
+            # Staff-typed free-form text — rendered as-typed. Blank lines become
+            # paragraph spacing instead of being force-fit into a numbered list.
+            for line in cl["free_text"].split("\n"):
+                if line.strip() == "":
+                    story.append(Spacer(1, 8))
+                else:
+                    story.append(Paragraph(_esc(line), freeform_style))
+        else:
+            for idx, item in enumerate(documents, 1):
+                story.append(Paragraph(f"{idx}. [ ] {_esc(str(item))}", doc_item_style))
 
         story.append(Paragraph(
             "Please ensure all documents are originals or self-attested photocopies as applicable. "
@@ -719,12 +777,36 @@ def export_checklists_pdf(data: ExportChecklistsRequest, admin=Depends(require_a
             footer_style
         ))
 
-        if i < len(rows) - 1:
+        if page_num < total_pages:
+            story.append(PageBreak())
+
+    for lrow in letter_rows:
+        page_num += 1
+        lt = dict(lrow)
+
+        story.append(Paragraph("UNIGLOBE MKOV TRAVEL", title_style))
+        story.append(Paragraph(f"{lt['template_type'].replace('_',' ').title()} Letter", subtitle_style))
+
+        meta_bits = [b for b in [lt.get("country"), lt.get("visa_type")] if b]
+        if meta_bits:
+            story.append(Paragraph(_esc(" · ".join(meta_bits)), footer_style))
+            story.append(Spacer(1, 10))
+
+        if lt.get("subject"):
+            story.append(Paragraph(_esc(lt["subject"]), section_style))
+
+        for line in (lt.get("body_template") or "").split("\n"):
+            if line.strip() == "":
+                story.append(Spacer(1, 8))
+            else:
+                story.append(Paragraph(_esc(line), freeform_style))
+
+        if page_num < total_pages:
             story.append(PageBreak())
 
     doc.build(story)
 
-    filename = "vfs_checklist_export.pdf" if len(rows) > 1 else f"{rows[0]['country']}_{rows[0]['visa_type']}_checklist.pdf"
+    filename = "vfs_checklist_export.pdf" if total_pages > 1 else f"{rows[0]['country']}_{rows[0]['visa_type']}_checklist.pdf"
     return FileResponse(tmp.name, filename=filename, media_type="application/pdf")
 
 
@@ -1699,9 +1781,12 @@ def update_lead(lead_id: int, data: UpdateLeadRequest, admin=Depends(require_rol
 
     sets, values = ["updated_at=CURRENT_TIMESTAMP"], []
     fields = {
+        # NOTE: "assigned_to" is intentionally excluded here — reassigning a
+        # lead is restricted to Sales Admin / Visa Admin / Superadmin and goes
+        # through the dedicated PUT /admin/lead/{lead_id}/assign endpoint below.
         "name": data.name, "email": data.email, "phone": data.phone,
         "destination": data.destination, "visa_type": data.visa_type,
-        "status": data.status, "assigned_to": data.assigned_to, "notes": data.notes,
+        "status": data.status, "notes": data.notes,
     }
     for col, val in fields.items():
         if val is not None:
@@ -1713,6 +1798,41 @@ def update_lead(lead_id: int, data: UpdateLeadRequest, admin=Depends(require_rol
         conn.commit()
     conn.close()
     return {"status": "updated"}
+
+
+@app.get("/admin/staff/assignable")
+def list_assignable_staff(admin=Depends(require_lead_assigner)):
+    """Basic staff roster for the lead-assignment dropdown — restricted to
+    Sales Admin / Visa Admin / Superadmin, same as the assign action itself."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, name, role FROM admin_users WHERE active=1 ORDER BY name"
+    ).fetchall()
+    conn.close()
+    return {"staff": [dict(r) for r in rows]}
+
+
+@app.put("/admin/lead/{lead_id}/assign")
+def assign_lead(lead_id: int, data: AssignLeadRequest, admin=Depends(require_lead_assigner)):
+    """Assign (or unassign, if assigned_to is null) a lead to a staff member.
+    Restricted to Sales Admin, Visa Admin, and Superadmin."""
+    conn = get_db()
+    lead = conn.execute("SELECT id FROM leads WHERE id=?", (lead_id,)).fetchone()
+    if not lead:
+        conn.close()
+        raise HTTPException(404, "Lead not found")
+    if data.assigned_to is not None:
+        staff = conn.execute("SELECT id FROM admin_users WHERE id=? AND active=1", (data.assigned_to,)).fetchone()
+        if not staff:
+            conn.close()
+            raise HTTPException(400, "Selected staff member not found or inactive")
+    conn.execute(
+        "UPDATE leads SET assigned_to=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (data.assigned_to, lead_id)
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "assigned"}
 
 
 @app.delete("/admin/lead/{lead_id}")
