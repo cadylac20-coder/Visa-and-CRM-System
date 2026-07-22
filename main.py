@@ -599,79 +599,6 @@ def delete_checklist(checklist_id: int, admin=Depends(require_roles("visa_staff"
     return {"status": "deleted"}
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# INSTANT QUOTE CALCULATOR
-# ══════════════════════════════════════════════════════════════════════════════
-
-@app.get("/admin/quote")
-def instant_quote(country: str, visa_type: str, group_size: int = 1, admin=Depends(require_admin)):
-    """
-    Look up the best-matching checklist for a country + visa type and return
-    an instant estimated quote: agency service fee + typical government fee,
-    scaled by group size. Falls back gracefully if no checklist exists yet.
-    """
-    conn = get_db()
-    checklist = conn.execute("""
-        SELECT * FROM custom_checklists
-        WHERE LOWER(country)=LOWER(?) AND LOWER(visa_type)=LOWER(?)
-        ORDER BY is_default DESC, updated_at DESC LIMIT 1
-    """, (country, visa_type)).fetchone()
-
-    if not checklist:
-        # Fall back to any checklist for that country regardless of visa type
-        checklist = conn.execute("""
-            SELECT * FROM custom_checklists
-            WHERE LOWER(country)=LOWER(?)
-            ORDER BY is_default DESC, updated_at DESC LIMIT 1
-        """, (country,)).fetchone()
-
-    conn.close()
-
-    if not checklist:
-        return {
-            "found": False,
-            "message": f"No pricing on file yet for {country} — {visa_type}. Add a VFS checklist with pricing to enable instant quotes.",
-            "country": country, "visa_type": visa_type, "group_size": group_size,
-        }
-
-    cl = dict(checklist)
-    service_fee_per_person = cl["final_price"] or cl["base_price"] or 0
-    govt_fee_per_person     = cl["typical_govt_fee"] or 0
-
-    service_total = round(service_fee_per_person * group_size, 2)
-    govt_total    = round(govt_fee_per_person * group_size, 2)
-    grand_total   = round(service_total + govt_total, 2)
-
-    return {
-        "found": True,
-        "country": cl["country"],
-        "visa_type": cl["visa_type"],
-        "checklist_name": cl["name"],
-        "group_size": group_size,
-        "per_person": {
-            "service_fee": service_fee_per_person,
-            "govt_fee":    govt_fee_per_person,
-            "total":       round(service_fee_per_person + govt_fee_per_person, 2),
-        },
-        "group_total": {
-            "service_fee": service_total,
-            "govt_fee":    govt_total,
-            "total":       grand_total,
-        },
-        "documents_required": json.loads(cl["documents_json"]),
-    }
-
-@app.get("/admin/quote/countries")
-def quote_available_countries(admin=Depends(require_admin)):
-    """List every country+visa_type combination that has pricing on file, for the quote form dropdown."""
-    conn = get_db()
-    rows = conn.execute("""
-        SELECT DISTINCT country, visa_type FROM custom_checklists
-        ORDER BY country, visa_type
-    """).fetchall()
-    conn.close()
-    return {"combinations": [dict(r) for r in rows]}
-
 def _build_checklist_story(rows, styles):
     """
     Shared builder for the VFS-style checklist export: header block
@@ -2958,15 +2885,33 @@ async def vault_upload(
     """, (client_id, doc_type, file.filename, b64, mime,
           json.dumps(extracted), admin["name"]))
 
-    # If passport, push extracted fields to client profile as structured data
-    if doc_type == "passport" and extracted:
+    if doc_type == "passport":
+        # Always keep the scan itself on the client profile...
         conn.execute(
-            "UPDATE clients SET passport_b64=?, passport_filename=?, "
-            "passport_number=?, passport_dob=?, passport_expiry=? WHERE id=?",
-            (b64, file.filename,
-             extracted.get("passport_no"), extracted.get("dob"),
-             extracted.get("expiry_date"), client_id)
+            "UPDATE clients SET passport_b64=?, passport_filename=? WHERE id=?",
+            (b64, file.filename, client_id)
         )
+        # ...but only overwrite the structured fields (number/DOB/expiry) with
+        # what OCR actually managed to read. Previously this always wrote
+        # extracted.get(...) even when OCR failed or wasn't available on this
+        # server, which silently set passport_expiry to NULL on every upload
+        # that didn't successfully OCR — and that's exactly why a client with
+        # a passport on file would never show up on the Expiry Tracker (it
+        # filters out anyone with no expiry on record). Now a failed/partial
+        # scan just leaves whatever was already on file untouched.
+        field_map = {
+            "passport_number": extracted.get("passport_no"),
+            "passport_dob":    extracted.get("dob"),
+            "passport_expiry": extracted.get("expiry_date"),
+        }
+        sets, values = [], []
+        for col, val in field_map.items():
+            if val:
+                sets.append(f"{col}=?")
+                values.append(val)
+        if sets:
+            values.append(client_id)
+            conn.execute(f"UPDATE clients SET {', '.join(sets)} WHERE id=?", values)
 
     conn.commit()
     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -3110,7 +3055,14 @@ def _run_ocr(content: bytes, filename: str) -> dict:
             except Exception:
                 return {}
         img  = Image.open(io.BytesIO(content))
-        text = pytesseract.image_to_string(img, lang="eng")
+        try:
+            text = pytesseract.image_to_string(img, lang="eng")
+        except pytesseract.pytesseract.TesseractNotFoundError:
+            # The pip package is installed but the actual `tesseract` binary
+            # isn't on this machine (common on a fresh Render instance) —
+            # tell the frontend clearly rather than falling through to a
+            # generic error, so the user is prompted to enter details by hand.
+            return {"ocr_unavailable": True}
         lines = [l.strip() for l in text.split("\n") if l.strip()]
         mrz   = [l for l in lines if len(l) >= 30 and "<" in l]
         result = {}
