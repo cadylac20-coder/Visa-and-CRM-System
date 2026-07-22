@@ -619,8 +619,29 @@ def _build_checklist_story(rows, styles):
     from reportlab.lib import colors
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
     from xml.sax.saxutils import escape
+    import re
+
+    def _preserve_typed_formatting(text: str) -> str:
+        """
+        Render exactly as typed: every line break and every run of
+        indentation/spacing the user put in a document/instruction box is
+        kept in place, instead of reportlab's default behaviour of
+        collapsing all whitespace and reflowing everything into one
+        justified block. A single space between words still wraps normally
+        at the page edge — only intentional formatting (line breaks,
+        leading indentation, multi-space alignment) is preserved verbatim.
+        """
+        escaped = escape(str(text))
+        out_lines = []
+        for line in escaped.split("\n"):
+            stripped = line.lstrip(" \t")
+            leading = line[:len(line) - len(stripped)]
+            leading_html = leading.replace("\t", "&nbsp;" * 4).replace(" ", "&nbsp;")
+            body = re.sub(r' {2,}', lambda m: "&nbsp;" * len(m.group()), stripped)
+            out_lines.append(leading_html + body)
+        return "<br/>".join(out_lines)
 
     title_style = ParagraphStyle(
         "ChecklistTitle", parent=styles["Title"], fontSize=16,
@@ -649,7 +670,7 @@ def _build_checklist_story(rows, styles):
         bold_items = fmt.get("bold_items", False)
         doc_item_style = ParagraphStyle(
             f"DocItem{i}", parent=styles["Normal"], fontSize=font_size,
-            leading=font_size * 1.5, spaceAfter=4
+            leading=font_size * 1.5, spaceAfter=4, alignment=TA_LEFT
         )
 
         story.append(Paragraph("UNIGLOBE MKOV TRAVEL", title_style))
@@ -678,7 +699,7 @@ def _build_checklist_story(rows, styles):
 
         story.append(Paragraph("Required Documents", section_style))
         for idx, item in enumerate(documents, 1):
-            safe_item = escape(str(item))
+            safe_item = _preserve_typed_formatting(item)
             if bold_items:
                 safe_item = f"<b>{safe_item}</b>"
             prefix = {"numbered": f"{idx}.", "bulleted": "\u2022"}.get(list_style, f"{idx}. [ ]")
@@ -973,14 +994,35 @@ async def client_upload_doc(app_id: str, doc_type: str = Form(...), file: Upload
     client_row = conn.execute("SELECT * FROM clients WHERE email=?", (client["sub"],)).fetchone()
     app = conn.execute("SELECT * FROM applications WHERE app_id=? AND client_id=?", (app_id, client_row["id"])).fetchone()
     if not app: conn.close(); raise HTTPException(404, "Not found")
+    content = await file.read()
     ext = os.path.splitext(file.filename)[1]
     file_name = f"{app_id}_{doc_type}_{uuid.uuid4().hex[:8]}{ext}"
     file_path = os.path.join(UPLOAD_DIR, file_name)
     with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        f.write(content)
     now = now_ist_str()
     conn.execute("UPDATE documents SET status='uploaded', file_name=?, file_path=?, uploaded_at=? WHERE app_id=? AND doc_type=?",
                  (file_name, file_path, now, app_id, doc_type))
+
+    # Same fix as the admin upload paths: a client uploading their own
+    # passport here should also sync to their profile so it turns up on the
+    # Expiry Tracker, not just the document checklist.
+    if doc_type == "passport":
+        extracted = _run_ocr(content, file.filename or "")
+        field_map = {
+            "passport_number": extracted.get("passport_no"),
+            "passport_dob":    extracted.get("dob"),
+            "passport_expiry": extracted.get("expiry_date"),
+        }
+        sets, values = [], []
+        for col, val in field_map.items():
+            if val:
+                sets.append(f"{col}=?")
+                values.append(val)
+        if sets:
+            values.append(client_row["id"])
+            conn.execute(f"UPDATE clients SET {', '.join(sets)} WHERE id=?", values)
+
     conn.execute("INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
                  (app_id, f"client:{client_row['name']}", "Document uploaded", f"Uploaded {doc_type}: {file_name}"))
     conn.commit(); conn.close()
@@ -1153,9 +1195,27 @@ async def admin_upload_passport(
         "UPDATE clients SET passport_b64=?, passport_filename=? WHERE id=?",
         (b64, file.filename, client_id)
     )
+
+    # Same fix as the other passport upload paths — run OCR and sync
+    # number/DOB/expiry so this client shows up on the Expiry Tracker too.
+    extracted = _run_ocr(content, file.filename or "")
+    field_map = {
+        "passport_number": extracted.get("passport_no"),
+        "passport_dob":    extracted.get("dob"),
+        "passport_expiry": extracted.get("expiry_date"),
+    }
+    sets, values = [], []
+    for col, val in field_map.items():
+        if val:
+            sets.append(f"{col}=?")
+            values.append(val)
+    if sets:
+        values.append(client_id)
+        conn.execute(f"UPDATE clients SET {', '.join(sets)} WHERE id=?", values)
+
     conn.commit()
     conn.close()
-    return {"status": "uploaded", "filename": file.filename}
+    return {"status": "uploaded", "filename": file.filename, "extracted": extracted}
 
 
 # ── UPLOAD document for specific application ──────────────────────────────────
@@ -1195,6 +1255,32 @@ async def admin_upload_doc(
             VALUES (?,?,?,?,?,?)
         """, (app_id, doc_type, file.filename, b64, "uploaded", now))
 
+    # This is the document checklist most people actually use to submit a
+    # passport (as opposed to the separate Document Vault feature) — it was
+    # never wired up to run OCR or sync the client's passport_expiry, which
+    # is exactly why a passport uploaded here never showed up on the Expiry
+    # Tracker even after upload. Run the same OCR + sync the vault upload
+    # does, only ever writing fields OCR actually managed to read.
+    if doc_type == "passport":
+        extracted = _run_ocr(content, file.filename or "")
+        conn.execute(
+            "UPDATE clients SET passport_b64=?, passport_filename=? WHERE id=?",
+            (b64, file.filename, app["client_id"])
+        )
+        field_map = {
+            "passport_number": extracted.get("passport_no"),
+            "passport_dob":    extracted.get("dob"),
+            "passport_expiry": extracted.get("expiry_date"),
+        }
+        sets, values = [], []
+        for col, val in field_map.items():
+            if val:
+                sets.append(f"{col}=?")
+                values.append(val)
+        if sets:
+            values.append(app["client_id"])
+            conn.execute(f"UPDATE clients SET {', '.join(sets)} WHERE id=?", values)
+
     conn.execute(
         "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
         (app_id, f"admin:{admin['name']}", "Document uploaded",
@@ -1202,7 +1288,8 @@ async def admin_upload_doc(
     )
     conn.commit()
     conn.close()
-    return {"status": "uploaded", "doc_type": doc_type, "filename": file.filename}
+    return {"status": "uploaded", "doc_type": doc_type, "filename": file.filename,
+            "extracted": extracted if doc_type == "passport" else None}
 
 
 # ── GET document as base64 (admin) ───────────────────────────────────────────
