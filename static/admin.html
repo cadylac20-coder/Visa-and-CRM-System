@@ -1084,31 +1084,40 @@ tbody tr:hover{background:var(--surface2)}
           <button type="button" class="btn btn-ghost btn-sm" style="margin-bottom:14px" onclick="loadExtractedTextAsItems()">Load Extracted Text as Items ↓</button>
         </div>
         <div class="form-group">
-          <label>Formatting</label>
-          <p style="font-size:11px;color:var(--text3);margin-top:2px;margin-bottom:8px">Choose how the "Required Documents" section prints on the exported PDF.</p>
-          <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
-              <input type="radio" name="vfs-format-mode" value="list" checked onchange="toggleChecklistFormatMode('vfs')"> Numbered list (items below)
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
-              <input type="radio" name="vfs-format-mode" value="freeform" onchange="toggleChecklistFormatMode('vfs')"> Free-form text
-            </label>
-          </div>
-          <div id="vfs-list-fields">
-            <label>Documents / Instructions</label>
-            <p style="font-size:11px;color:var(--text3);margin-top:2px;margin-bottom:8px">Each box is one item — it can be a short document name or a full paragraph of instructions. Boxes grow as you type.</p>
-            <div id="checklist-items-creator"></div>
-            <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="addChecklistItem('checklist-items-creator')">+ Add Item</button>
-          </div>
-          <div id="vfs-freeform-fields" style="display:none">
-            <label>Type the checklist exactly as you want it to print</label>
-            <p style="font-size:11px;color:var(--text3);margin-top:2px;margin-bottom:8px">Blank lines become spacing in the PDF — use them to group sections, add headings, or format freely.</p>
-            <textarea id="vfs-free-text" style="min-height:180px"></textarea>
-          </div>
+          <label>Documents / Instructions</label>
+          <p style="font-size:11px;color:var(--text3);margin-top:2px;margin-bottom:8px">Each box is one item — it can be a short document name or a full paragraph of instructions. Boxes grow as you type.</p>
+          <div id="checklist-items-creator"></div>
+          <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="addChecklistItem('checklist-items-creator')">+ Add Item</button>
         </div>
         <div class="form-group">
           <label>Service Charge (INR)</label>
           <input type="number" id="vfs-price" placeholder="5000">
+        </div>
+        <div class="form-group">
+          <label>Export Formatting</label>
+          <p style="font-size:11px;color:var(--text3);margin-top:2px;margin-bottom:8px">Controls how this checklist looks when exported to PDF — pick whatever avoids the layout looking cramped or broken for this list.</p>
+          <div class="form-row">
+            <div class="form-group">
+              <label style="font-size:11px">List Style</label>
+              <select id="vfs-format-list-style">
+                <option value="checkbox">Numbered checkboxes — "1. [ ] item"</option>
+                <option value="numbered">Numbered — "1. item"</option>
+                <option value="bulleted">Bulleted — "• item"</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label style="font-size:11px">Font Size</label>
+              <select id="vfs-format-font-size">
+                <option value="9">Small</option>
+                <option value="10.5" selected>Normal</option>
+                <option value="12.5">Large</option>
+              </select>
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:6px">
+            <input type="checkbox" id="vfs-format-bold" style="width:auto">
+            Bold document names in the export
+          </label>
         </div>
       </div>
     </div>
@@ -1144,28 +1153,36 @@ tbody tr:hover{background:var(--surface2)}
         </div>
       </div>
       <div class="form-group" style="margin-bottom:10px">
-        <label>Formatting</label>
-        <div style="display:flex;gap:16px;margin-bottom:10px;font-size:13px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
-            <input type="radio" name="edit-format-mode" value="list" checked onchange="toggleChecklistFormatMode('edit')"> Numbered list (items below)
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
-            <input type="radio" name="edit-format-mode" value="freeform" onchange="toggleChecklistFormatMode('edit')"> Free-form text
-          </label>
-        </div>
+        <label>Documents / Instructions</label>
+        <p style="font-size:11px;color:var(--text3);margin-top:2px">Each box can hold a single document name or a full paragraph of instructions — boxes grow as you type, and you can drag the bottom-right corner to resize.</p>
       </div>
-      <div id="edit-list-fields">
-        <div class="form-group" style="margin-bottom:10px">
-          <label>Documents / Instructions</label>
-          <p style="font-size:11px;color:var(--text3);margin-top:2px">Each box can hold a single document name or a full paragraph of instructions — boxes grow as you type, and you can drag the bottom-right corner to resize.</p>
+      <div id="checklist-items-editor"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px;margin-bottom:16px" onclick="addChecklistItem()">+ Add Item</button>
+      <div class="form-group">
+        <label>Export Formatting</label>
+        <p style="font-size:11px;color:var(--text3);margin-top:2px;margin-bottom:8px">Controls how this checklist looks when exported to PDF.</p>
+        <div class="form-row">
+          <div class="form-group">
+            <label style="font-size:11px">List Style</label>
+            <select id="edit-format-list-style">
+              <option value="checkbox">Numbered checkboxes — "1. [ ] item"</option>
+              <option value="numbered">Numbered — "1. item"</option>
+              <option value="bulleted">Bulleted — "• item"</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label style="font-size:11px">Font Size</label>
+            <select id="edit-format-font-size">
+              <option value="9">Small</option>
+              <option value="10.5">Normal</option>
+              <option value="12.5">Large</option>
+            </select>
+          </div>
         </div>
-        <div id="checklist-items-editor"></div>
-        <button class="btn btn-ghost btn-sm" style="margin-top:8px;margin-bottom:16px" onclick="addChecklistItem()">+ Add Item</button>
-      </div>
-      <div id="edit-freeform-fields" style="display:none;margin-bottom:16px">
-        <label>Type the checklist exactly as you want it to print</label>
-        <p style="font-size:11px;color:var(--text3);margin-top:2px;margin-bottom:8px">Blank lines become spacing in the PDF — use them to group sections, add headings, or format freely.</p>
-        <textarea id="edit-free-text" style="min-height:180px"></textarea>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:6px">
+          <input type="checkbox" id="edit-format-bold" style="width:auto">
+          Bold document names in the export
+        </label>
       </div>
     </div>
     <div class="modal-footer">
@@ -1286,13 +1303,21 @@ tbody tr:hover{background:var(--surface2)}
       </div>
       <div id="export-checklist-list" style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r);padding:8px"></div>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px">
-        <label style="margin:0">Also Include Letter Templates <span style="color:var(--text3);font-weight:400">(optional)</span></label>
-        <div style="display:flex;gap:10px">
-          <button class="btn btn-ghost btn-sm" onclick="clearExportLetterSelection()">Clear</button>
+      <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+        <div class="card-title" style="margin-bottom:8px">Also include letter template(s) (optional)</div>
+        <p style="font-size:11px;color:var(--text3);margin-top:0;margin-bottom:10px">Pick one or more letter templates to append to the same PDF, filled in for a specific client.</p>
+        <div id="export-letter-template-list" style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r);padding:8px;margin-bottom:12px"></div>
+        <div class="form-row">
+          <div class="form-group">
+            <label style="font-size:11px">Client (required if a letter is selected)</label>
+            <select id="export-letter-client"><option value="">Select client...</option></select>
+          </div>
+          <div class="form-group">
+            <label style="font-size:11px">Application (optional)</label>
+            <input type="text" id="export-letter-app-id" placeholder="VIS-2026-001">
+          </div>
         </div>
       </div>
-      <div id="export-letter-list" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r);padding:8px"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('export-checklists-modal')">Cancel</button>
@@ -1370,6 +1395,13 @@ function roleLabel(role) {
           sales_admin:'Sales Admin', visa_admin:'Visa Admin'}[role] || role;
 }
 
+// Assigning a lead to a staff member is restricted to Sales Admin, Visa
+// Admin, and Superadmin — mirrors the backend check on /admin/lead/*/assign.
+const LEAD_ASSIGN_ROLES = ['sales_admin', 'visa_admin', 'superadmin', 'staff'];
+function canAssignLeads() {
+  return LEAD_ASSIGN_ROLES.includes(CURRENT_ROLE);
+}
+
 // Map each sidebar nav page to the role(s) allowed to see it.
 // superadmin/staff always see everything regardless of this map.
 const ROLE_PAGE_ACCESS = {
@@ -1382,7 +1414,7 @@ const ROLE_PAGE_ACCESS = {
   'expiry-tracker': ['sales','visa_staff','sales_admin','visa_admin'],
   'quote-calculator': ['sales','visa_staff','sales_admin','visa_admin'],
   letters: ['visa_staff','visa_admin'],
-  leads: ['sales','sales_admin'],
+  leads: ['sales','sales_admin','visa_admin'],
   calendar: null,              // everyone
   'team-chat': null,           // everyone
   invoices: ['visa_staff','visa_admin'],
@@ -1766,22 +1798,16 @@ function handleVFSUpload(input) {
   toast('PDF uploaded — paste the document list and load it as items below');
 }
 
-function toggleChecklistFormatMode(prefix) {
-  const mode = document.querySelector(`input[name="${prefix}-format-mode"]:checked`).value;
-  document.getElementById(`${prefix}-list-fields`).style.display = mode === 'freeform' ? 'none' : '';
-  document.getElementById(`${prefix}-freeform-fields`).style.display = mode === 'freeform' ? '' : 'none';
-}
-
 function openNewChecklistModal() {
   document.getElementById('vfs-country').value = '';
   document.getElementById('vfs-visa-type').value = 'tourist';
   document.getElementById('vfs-price').value = '';
   document.getElementById('vfs-raw-text').value = '';
   document.getElementById('vfs-extracted').style.display = 'none';
-  document.getElementById('vfs-free-text').value = '';
-  document.querySelector('input[name="vfs-format-mode"][value="list"]').checked = true;
-  toggleChecklistFormatMode('vfs');
   document.getElementById('checklist-items-creator').innerHTML = '';
+  document.getElementById('vfs-format-list-style').value = 'checkbox';
+  document.getElementById('vfs-format-font-size').value = '10.5';
+  document.getElementById('vfs-format-bold').checked = false;
   addChecklistItem('checklist-items-creator');
   openModal('new-checklist-modal');
 }
@@ -1790,23 +1816,20 @@ async function saveVFSChecklist() {
   const country  = document.getElementById('vfs-country').value.trim();
   const type     = document.getElementById('vfs-visa-type').value;
   const price    = parseFloat(document.getElementById('vfs-price').value) || 0;
-  const formatMode = document.querySelector('input[name="vfs-format-mode"]:checked').value;
-  const freeText = document.getElementById('vfs-free-text').value;
   const docs     = getCurrentEditorDocs('checklist-items-creator');
+  const format_options = {
+    list_style: document.getElementById('vfs-format-list-style').value,
+    font_size:  parseFloat(document.getElementById('vfs-format-font-size').value),
+    bold_items: document.getElementById('vfs-format-bold').checked,
+  };
 
-  if (!country) return toast('Enter a country','error');
-  if (formatMode === 'freeform') {
-    if (!freeText.trim()) return toast('Type the checklist content','error');
-  } else if (docs.length === 0) {
-    return toast('Enter at least one document/instruction','error');
-  }
+  if (!country || docs.length === 0) return toast('Enter country and at least one document/instruction','error');
 
   try {
     await api('/admin/checklist/create', {
       method:'POST', body: JSON.stringify({
         country, visa_type: type, name: `${country} ${type} — VFS`,
-        documents: docs, base_price: price, discount_percentage: 0,
-        format_mode: formatMode, free_text: freeText
+        documents: docs, base_price: price, discount_percentage: 0, format_options
       })
     });
     closeModal('new-checklist-modal');
@@ -1853,10 +1876,10 @@ function editChecklist(id) {
   document.getElementById('edit-checklist-country').value = cl.country;
   document.getElementById('edit-checklist-type').value = cl.visa_type;
   document.getElementById('edit-checklist-price').value = cl.base_price;
-  const mode = cl.format_mode === 'freeform' ? 'freeform' : 'list';
-  document.querySelector(`input[name="edit-format-mode"][value="${mode}"]`).checked = true;
-  document.getElementById('edit-free-text').value = cl.free_text || '';
-  toggleChecklistFormatMode('edit');
+  const fmt = cl.format_options || {list_style:'checkbox', font_size:10.5, bold_items:false};
+  document.getElementById('edit-format-list-style').value = fmt.list_style || 'checkbox';
+  document.getElementById('edit-format-font-size').value = String(fmt.font_size || 10.5);
+  document.getElementById('edit-format-bold').checked = !!fmt.bold_items;
   renderChecklistEditor(cl.documents, 'checklist-items-editor');
   openModal('edit-checklist-modal');
 }
@@ -1899,18 +1922,10 @@ function getCurrentEditorDocs(containerId) {
 
 function loadExtractedTextAsItems() {
   const raw = document.getElementById('vfs-raw-text').value;
-  const seen = new Set();
-  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean).filter(l => {
-    // De-dupe: multi-page source PDFs often repeat the same header/footer
-    // note on every page, which otherwise turns into one duplicate item
-    // per page and clutters (and badly formats) the exported checklist.
-    if (seen.has(l)) return false;
-    seen.add(l);
-    return true;
-  });
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
   if (!lines.length) return toast('No extracted text to load','error');
   renderChecklistEditor(lines, 'checklist-items-creator');
-  toast(`Loaded ${lines.length} unique line(s) as items — merge any that belong together into one paragraph box`);
+  toast(`Loaded ${lines.length} line(s) as items — merge any that belong together into one paragraph box`);
 }
 
 async function saveChecklist() {
@@ -1919,16 +1934,15 @@ async function saveChecklist() {
   const price   = parseFloat(document.getElementById('edit-checklist-price').value) || 0;
   const country = document.getElementById('edit-checklist-country').value.trim();
   const visaType= document.getElementById('edit-checklist-type').value;
-  const formatMode = document.querySelector('input[name="edit-format-mode"]:checked').value;
-  const freeText = document.getElementById('edit-free-text').value;
-  if (formatMode === 'freeform') {
-    if (!freeText.trim()) return toast('Type the checklist content','error');
-  } else if (!docs.length) {
-    return toast('Add at least one document/instruction','error');
-  }
+  const format_options = {
+    list_style: document.getElementById('edit-format-list-style').value,
+    font_size:  parseFloat(document.getElementById('edit-format-font-size').value),
+    bold_items: document.getElementById('edit-format-bold').checked,
+  };
+  if (!docs.length) return toast('Add at least one document/instruction','error');
   try {
     await api(`/admin/checklist/${editingChecklistId}`, {
-      method:'PUT', body: JSON.stringify({country, visa_type: visaType, base_price: price, documents: docs, format_mode: formatMode, free_text: freeText})
+      method:'PUT', body: JSON.stringify({country, visa_type: visaType, base_price: price, documents: docs, format_options})
     });
     await loadChecklistsFromServer();
     renderChecklists();
@@ -1966,12 +1980,11 @@ async function openExportChecklistsModal() {
   exportSelectedIds = new Set();
   exportSelectedLetterIds = new Set();
   document.getElementById('export-checklist-search').value = '';
+  document.getElementById('export-letter-app-id').value = '';
   renderExportChecklistList(allChecklists);
   updateExportSelectedCount();
-  try {
-    if (!allLetterTemplates.length) await loadLetterTemplates();
-  } catch(e) { /* letter templates are optional for export — ignore load errors here */ }
-  renderExportLetterList();
+  await Promise.all([populateExportLetterClientDropdown(), loadLetterTemplatesForExport()]);
+  renderExportLetterTemplateList();
   openModal('export-checklists-modal');
 }
 
@@ -2001,32 +2014,6 @@ function renderExportChecklistList(list) {
   `).join('');
 }
 
-function renderExportLetterList() {
-  const container = document.getElementById('export-letter-list');
-  if (!allLetterTemplates.length) {
-    container.innerHTML = '<p style="color:var(--text3);font-size:13px;padding:8px">No letter templates saved yet.</p>';
-    return;
-  }
-  container.innerHTML = allLetterTemplates.map(lt => `
-    <label style="display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:var(--r);cursor:pointer" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
-      <input type="checkbox" ${exportSelectedLetterIds.has(lt.id) ? 'checked' : ''} onchange="toggleExportLetter(${lt.id}, this.checked)" style="width:16px;height:16px;cursor:pointer">
-      <div style="flex:1">
-        <div style="font-size:13px;font-weight:600">${lt.template_type.replace('_',' ')}${lt.country ? ' — ' + lt.country : ''}</div>
-        <div style="font-size:11px;color:var(--text3)">${lt.subject || ''}</div>
-      </div>
-    </label>
-  `).join('');
-}
-
-function toggleExportLetter(id, checked) {
-  if (checked) exportSelectedLetterIds.add(id); else exportSelectedLetterIds.delete(id);
-}
-
-function clearExportLetterSelection() {
-  exportSelectedLetterIds.clear();
-  renderExportLetterList();
-}
-
 function toggleExportChecklist(id, checked) {
   if (checked) exportSelectedIds.add(id); else exportSelectedIds.delete(id);
   updateExportSelectedCount();
@@ -2049,23 +2036,82 @@ function updateExportSelectedCount() {
   document.getElementById('export-selected-count').textContent = `${n} selected`;
 }
 
-async function exportSelectedChecklistsPDF() {
-  if (!exportSelectedIds.size) return toast('Select at least one checklist','error');
+// Letter templates are already loaded globally by the Letters page
+// (allLetterTemplates) — but load them here too in case the export modal is
+// opened before that page has ever been visited this session.
+async function loadLetterTemplatesForExport() {
+  if (allLetterTemplates && allLetterTemplates.length) return;
   try {
-    const r = await fetch(`${API}/admin/checklists/export-pdf`, {
+    const data = await api('/admin/letter-templates');
+    allLetterTemplates = data.templates;
+  } catch(e) { allLetterTemplates = allLetterTemplates || []; }
+}
+
+async function populateExportLetterClientDropdown() {
+  try {
+    const data = await api('/admin/clients');
+    const sel = document.getElementById('export-letter-client');
+    sel.innerHTML = '<option value="">Select client...</option>' +
+      data.clients.map(c => `<option value="${c.id}">${c.name} — ${c.email}</option>`).join('');
+  } catch(e) {}
+}
+
+function renderExportLetterTemplateList() {
+  const typeLabels = {cover:'Cover Letter', authority:'Authority Letter', invitation:'Invitation Letter', performa:'Performa'};
+  const container = document.getElementById('export-letter-template-list');
+  if (!allLetterTemplates || !allLetterTemplates.length) {
+    container.innerHTML = '<p style="color:var(--text3);font-size:12px;padding:4px">No letter templates yet — add one from the Letter Templates page.</p>';
+    return;
+  }
+  container.innerHTML = allLetterTemplates.map(t => `
+    <label style="display:flex;align-items:center;gap:10px;padding:7px 6px;border-radius:var(--r);cursor:pointer" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+      <input type="checkbox" ${exportSelectedLetterIds.has(t.id) ? 'checked' : ''} onchange="toggleExportLetterTemplate(${t.id}, this.checked)" style="width:16px;height:16px;cursor:pointer">
+      <div style="flex:1">
+        <div style="font-size:12.5px;font-weight:600">${typeLabels[t.template_type] || t.template_type}</div>
+        <div style="font-size:11px;color:var(--text3)">${t.country || 'All countries'} · ${t.visa_type || 'All types'}</div>
+      </div>
+    </label>
+  `).join('');
+}
+
+function toggleExportLetterTemplate(id, checked) {
+  if (checked) exportSelectedLetterIds.add(id); else exportSelectedLetterIds.delete(id);
+}
+
+async function exportSelectedChecklistsPDF() {
+  if (!exportSelectedIds.size && !exportSelectedLetterIds.size) {
+    return toast('Select at least one checklist or letter template','error');
+  }
+  const clientId = document.getElementById('export-letter-client').value;
+  if (exportSelectedLetterIds.size && !clientId) {
+    return toast('Select a client to fill in the letter template(s)','error');
+  }
+
+  const usingLetters = exportSelectedLetterIds.size > 0;
+  const endpoint = usingLetters ? '/admin/checklists/export-pdf-with-letters' : '/admin/checklists/export-pdf';
+  const body = usingLetters
+    ? {
+        checklist_ids: Array.from(exportSelectedIds),
+        letter_template_ids: Array.from(exportSelectedLetterIds),
+        client_id: clientId ? parseInt(clientId) : null,
+        app_id: document.getElementById('export-letter-app-id').value.trim() || null,
+      }
+    : { checklist_ids: Array.from(exportSelectedIds) };
+
+  try {
+    const r = await fetch(`${API}${endpoint}`, {
       method: 'POST',
       headers: {'Content-Type':'application/json','Authorization':`Bearer ${TOKEN}`},
-      body: JSON.stringify({
-        checklist_ids: Array.from(exportSelectedIds),
-        letter_template_ids: Array.from(exportSelectedLetterIds)
-      })
+      body: JSON.stringify(body)
     });
     if (!r.ok) throw new Error('Export failed');
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = (exportSelectedIds.size + exportSelectedLetterIds.size) > 1 ? 'vfs_checklist_export.pdf' : 'checklist.pdf';
+    a.download = usingLetters
+      ? 'vfs_checklist_with_letters.pdf'
+      : (exportSelectedIds.size > 1 ? 'vfs_checklist_export.pdf' : 'checklist.pdf');
     a.click();
     URL.revokeObjectURL(url);
     closeModal('export-checklists-modal');
@@ -3797,7 +3843,10 @@ async function loadLeads() {
         <td><span class="status status-${leadStatusClass(l.status)}">${l.status}</span></td>
         <td style="font-size:12px">${l.next_followup ? formatDateTime(l.next_followup) : '<span style="color:var(--text3)">none</span>'}</td>
         <td style="font-size:12px">${l.assigned_name || '<span style="color:var(--text3)">unassigned</span>'}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openLeadDetail(${l.id})">Open</button></td>
+        <td style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openLeadDetail(${l.id})">Open</button>
+          ${canAssignLeads() ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openAssignLeadModal(${l.id}, ${l.assigned_to != null ? l.assigned_to : 'null'})">Assign</button>` : ''}
+        </td>
       </tr>
     `).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text3)">No leads yet</td></tr>';
 
@@ -3902,7 +3951,6 @@ async function openLeadDetail(leadId) {
   try {
     const data = await api(`/admin/lead/${leadId}`);
     const l = data.lead;
-    const canAssign = ['sales_admin','visa_admin','superadmin'].includes(CURRENT_ROLE);
     document.getElementById('lead-detail-title').textContent = l.name;
     document.getElementById('lead-detail-body').innerHTML = `
       <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
@@ -3911,6 +3959,7 @@ async function openLeadDetail(leadId) {
         </select>
         ${l.status === 'won' && !l.converted_client_id ? `<button class="btn btn-primary btn-sm" onclick="openConvertModal(${leadId})">Convert to Client</button>` : ''}
         ${l.converted_client_id ? `<span class="status status-approved">Converted ✓</span>` : ''}
+        ${canAssignLeads() ? `<button class="btn btn-ghost btn-sm" onclick="openAssignLeadModal(${leadId}, ${l.assigned_to != null ? l.assigned_to : 'null'})">Assign to Staff</button>` : ''}
         <button class="btn btn-danger btn-sm" onclick="deleteLeadConfirm(${leadId})">Delete Lead</button>
       </div>
       <div style="display:grid;gap:8px;font-size:13px;margin-bottom:16px">
@@ -3920,14 +3969,6 @@ async function openLeadDetail(leadId) {
         ${infoRow('Visa Type', l.visa_type || '—')}
         ${infoRow('Source', l.source.replace('_',' '))}
         ${infoRow('Notes', l.notes || '—')}
-        ${canAssign
-          ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
-               <span style="color:var(--text3)">Assigned To</span>
-               <select id="ld-assign-select" onchange="assignLead(${leadId}, this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:6px 8px;color:var(--text);font-size:13px;outline:none">
-                 <option value="">Loading…</option>
-               </select>
-             </div>`
-          : infoRow('Assigned To', l.assigned_name || '—')}
       </div>
       <div style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
         <strong style="font-size:13px">Follow-ups</strong>
@@ -3946,35 +3987,8 @@ async function openLeadDetail(leadId) {
         `).join('') || '<p style="color:var(--text3);font-size:12px">No follow-ups scheduled.</p>'}
       </div>
     `;
-    if (canAssign) populateLeadAssignSelect(l.assigned_to);
     openModal('lead-detail-modal');
   } catch(e) { toast(e.message || 'Error loading lead','error'); }
-}
-
-let assignableStaffCache = null;
-
-async function populateLeadAssignSelect(currentAssignedTo) {
-  const select = document.getElementById('ld-assign-select');
-  try {
-    if (!assignableStaffCache) {
-      const data = await api('/admin/staff/assignable');
-      assignableStaffCache = data.staff;
-    }
-    select.innerHTML = '<option value="">Unassigned</option>' +
-      assignableStaffCache.map(s => `<option value="${s.id}" ${s.id===currentAssignedTo?'selected':''}>${s.name} (${roleLabel(s.role)})</option>`).join('');
-  } catch(e) {
-    select.innerHTML = '<option value="">Unable to load staff</option>';
-  }
-}
-
-async function assignLead(leadId, staffId) {
-  try {
-    await api(`/admin/lead/${leadId}/assign`, {
-      method: 'PUT', body: JSON.stringify({assigned_to: staffId ? parseInt(staffId) : null})
-    });
-    toast('Lead assignment updated');
-    loadLeads();
-  } catch(e) { toast(e.message || 'Error assigning lead','error'); }
 }
 
 async function updateLeadStatus(leadId, status) {
@@ -4004,6 +4018,37 @@ function openAddFollowup(leadId) {
   api(`/admin/lead/${leadId}/followup`, {
     method:'POST', body: JSON.stringify({lead_id: leadId, due_at: due, note, channel: 'call'})
   }).then(() => { toast('Follow-up added'); openLeadDetail(leadId); }).catch(() => toast('Error','error'));
+}
+
+let assigningLeadId = null;
+
+async function openAssignLeadModal(leadId, currentAssignedTo) {
+  if (!canAssignLeads()) return;
+  assigningLeadId = leadId;
+  const sel = document.getElementById('assign-lead-staff');
+  sel.innerHTML = '<option value="">Unassigned</option>';
+  try {
+    const data = await api('/admin/staff');
+    sel.innerHTML = '<option value="">Unassigned</option>' +
+      data.staff.filter(s => s.active).map(s =>
+        `<option value="${s.id}" ${currentAssignedTo != null && String(s.id) === String(currentAssignedTo) ? 'selected' : ''}>${s.name} (${roleLabel(s.role)})</option>`
+      ).join('');
+  } catch(e) {}
+  openModal('assign-lead-modal');
+}
+
+async function submitLeadAssignment() {
+  if (assigningLeadId === null) return;
+  const val = document.getElementById('assign-lead-staff').value;
+  try {
+    await api(`/admin/lead/${assigningLeadId}/assign`, {
+      method: 'POST', body: JSON.stringify({assigned_to: val ? parseInt(val) : null})
+    });
+    closeModal('assign-lead-modal');
+    toast('Lead assigned');
+    assigningLeadId = null;
+    loadLeads();
+  } catch(e) { toast(e.message || 'Error assigning lead','error'); }
 }
 
 function openConvertModal(leadId) {
@@ -4975,6 +5020,26 @@ function installApp() {
     <div class="modal-body" id="lead-detail-body"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('lead-detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Assign Lead Modal (Sales Admin / Visa Admin / Superadmin only) -->
+<div class="modal-overlay" id="assign-lead-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <span class="modal-title">Assign Lead</span>
+      <button class="modal-close" onclick="closeModal('assign-lead-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Assign To</label>
+        <select id="assign-lead-staff"><option value="">Unassigned</option></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('assign-lead-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitLeadAssignment()">Save Assignment</button>
     </div>
   </div>
 </div>
