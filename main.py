@@ -31,6 +31,25 @@ from notifier import send_checklist, send_status_update, send_reminder, send_cal
 
 init_db()
 
+# --- Lightweight, idempotent migration: new free-form checklist columns ------
+def _migrate_schema():
+    conn = get_db()
+    existing_cols = {r["name"] for r in conn.execute("PRAGMA table_info(custom_checklists)").fetchall()}
+    if "format_mode" not in existing_cols:
+        conn.execute("ALTER TABLE custom_checklists ADD COLUMN format_mode TEXT DEFAULT 'list'")
+    if "free_text" not in existing_cols:
+        conn.execute("ALTER TABLE custom_checklists ADD COLUMN free_text TEXT DEFAULT ''")
+    conn.commit()
+    conn.close()
+
+_migrate_schema()
+
+def require_lead_assigner(admin=Depends(require_admin)):
+    """Assigning leads to staff is limited to Sales Admin, Visa Admin, and Superadmin."""
+    if admin.get("role") not in ("sales_admin", "visa_admin", "superadmin"):
+        raise HTTPException(403, "Only Sales Admin, Visa Admin, or Superadmin can assign leads")
+    return admin
+
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -79,12 +98,6 @@ class UpdateDocStatusRequest(BaseModel):
 class CountrySearch(BaseModel):
     query: str
 
-class ChecklistFormatOptions(BaseModel):
-    """Free-form export styling chosen while creating/editing a checklist."""
-    list_style: str = "checkbox"   # "checkbox" ("1. [ ] item"), "numbered" ("1. item"), "bulleted" ("• item")
-    font_size:  float = 10.5
-    bold_items: bool = False
-
 class CustomChecklistData(BaseModel):
     country: str; visa_type: str; name: str
     description: Optional[str] = ""
@@ -92,7 +105,8 @@ class CustomChecklistData(BaseModel):
     base_price: float = 0
     discount_percentage: float = 0
     typical_govt_fee: float = 0
-    format_options: Optional[ChecklistFormatOptions] = None
+    format_mode: str = "list"          # "list" (numbered checklist) or "freeform" (typed as-is)
+    free_text: Optional[str] = ""      # used when format_mode == "freeform"
 
 class UpdateChecklistData(BaseModel):
     country: Optional[str] = None
@@ -101,16 +115,12 @@ class UpdateChecklistData(BaseModel):
     discount_percentage: Optional[float] = None
     documents: Optional[list] = None
     typical_govt_fee: Optional[float] = None
-    format_options: Optional[ChecklistFormatOptions] = None
+    format_mode: Optional[str] = None
+    free_text: Optional[str] = None
 
 class ExportChecklistsRequest(BaseModel):
     checklist_ids: list[int]
-
-class ExportChecklistsWithLettersRequest(BaseModel):
-    checklist_ids: list[int] = []
     letter_template_ids: list[int] = []
-    client_id: Optional[int] = None   # required if letter_template_ids is non-empty (to fill in placeholders)
-    app_id: Optional[str] = None
 
 class ClientDiscountData(BaseModel):
     client_id: int; checklist_id: int
@@ -154,18 +164,14 @@ class UpdateLeadRequest(BaseModel):
     assigned_to: Optional[int] = None
     notes:       Optional[str] = None
 
+class AssignLeadRequest(BaseModel):
+    assigned_to: Optional[int] = None   # null clears the assignment
+
 class NewFollowupRequest(BaseModel):
     lead_id: int; due_at: str; note: Optional[str] = ""; channel: str = "call"
 
 class ConvertLeadRequest(BaseModel):
     password: str   # client portal password to set on conversion
-
-class AssignLeadRequest(BaseModel):
-    assigned_to: Optional[int] = None   # staff id, or null to unassign
-
-# Roles allowed to assign leads to a staff member. superadmin/staff already
-# bypass require_roles() checks everywhere, so they're implicitly included.
-LEAD_ASSIGNER_ROLES = ("sales_admin", "visa_admin")
 
 # --- Calendar schemas ────────────────────────────────────────────────────────
 class NewCalendarEventRequest(BaseModel):
@@ -484,33 +490,18 @@ def admin_verify_doc(app_id: str, data: UpdateDocStatusRequest, admin=Depends(re
     return {"status": "updated"}
 
 # --- Checklists & Pricing ──────────────────────────────────────────────────────
-
-def _ensure_checklist_format_column():
-    """One-time migration: existing deployments need this column added explicitly."""
-    conn = get_db()
-    try:
-        conn.execute("ALTER TABLE custom_checklists ADD COLUMN format_options_json TEXT")
-        conn.commit()
-    except Exception as e:
-        if "duplicate column" not in str(e).lower():
-            print(f"Migration note (format_options_json): {e}")
-    conn.close()
-
-_ensure_checklist_format_column()
-
 @app.post("/admin/checklist/create")
 def create_checklist(data: CustomChecklistData, admin=Depends(require_roles("visa_staff"))):
     # Service charge is ADDITIVE — final = base + base*(pct/100)
     final_price = data.base_price * (1 + data.discount_percentage / 100)
-    fmt = (data.format_options or ChecklistFormatOptions()).dict()
     conn = get_db()
     try:
         conn.execute("""INSERT INTO custom_checklists
-            (country, visa_type, name, description, documents_json, base_price, discount_percentage, final_price, typical_govt_fee, format_options_json, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (country, visa_type, name, description, documents_json, base_price, discount_percentage, final_price, typical_govt_fee, created_by, format_mode, free_text)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (data.country, data.visa_type, data.name, data.description,
              json.dumps(data.documents), data.base_price, data.discount_percentage, final_price,
-             data.typical_govt_fee, json.dumps(fmt), admin["name"]))
+             data.typical_govt_fee, admin["name"], data.format_mode or "list", data.free_text or ""))
         conn.commit()
         new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         conn.close()
@@ -518,15 +509,6 @@ def create_checklist(data: CustomChecklistData, admin=Depends(require_roles("vis
     except Exception as e:
         conn.close(); raise HTTPException(400, str(e))
 
-
-def _parse_format_options(raw: Optional[str]) -> dict:
-    default = ChecklistFormatOptions().dict()
-    if not raw:
-        return default
-    try:
-        return {**default, **json.loads(raw)}
-    except Exception:
-        return default
 
 @app.get("/admin/checklist/{checklist_id}")
 def get_checklist(checklist_id: int, admin=Depends(require_admin)):
@@ -537,7 +519,6 @@ def get_checklist(checklist_id: int, admin=Depends(require_admin)):
         raise HTTPException(404, "Checklist not found")
     d = dict(row)
     d["documents"] = json.loads(d["documents_json"])
-    d["format_options"] = _parse_format_options(d.get("format_options_json"))
     return {"checklist": d}
 
 @app.get("/admin/checklists")
@@ -545,8 +526,7 @@ def get_all_checklists(admin=Depends(require_admin)):
     conn = get_db()
     rows = conn.execute("SELECT * FROM custom_checklists ORDER BY created_at DESC").fetchall()
     conn.close()
-    result = [dict(r) | {"documents": json.loads(r["documents_json"]),
-                         "format_options": _parse_format_options(r.get("format_options_json"))} for r in rows]
+    result = [dict(r) | {"documents": json.loads(r["documents_json"])} for r in rows]
     return {"checklists": result}
 
 @app.get("/admin/checklists/{country}")
@@ -554,8 +534,7 @@ def get_checklists_by_country(country: str, admin=Depends(require_admin)):
     conn = get_db()
     rows = conn.execute("SELECT * FROM custom_checklists WHERE LOWER(country)=LOWER(?) ORDER BY created_at DESC", (country,)).fetchall()
     conn.close()
-    result = [dict(r) | {"documents": json.loads(r["documents_json"]),
-                         "format_options": _parse_format_options(r.get("format_options_json"))} for r in rows]
+    result = [dict(r) | {"documents": json.loads(r["documents_json"])} for r in rows]
     return {"checklists": result}
 
 @app.put("/admin/checklist/{checklist_id}")
@@ -578,11 +557,12 @@ def update_checklist(checklist_id: int, data: UpdateChecklistData, admin=Depends
         conn.execute("UPDATE custom_checklists SET discount_percentage=?, final_price=? WHERE id=?", (data.discount_percentage, fp, checklist_id))
     if data.documents is not None:
         conn.execute("UPDATE custom_checklists SET documents_json=? WHERE id=?", (json.dumps(data.documents), checklist_id))
+    if data.format_mode is not None:
+        conn.execute("UPDATE custom_checklists SET format_mode=? WHERE id=?", (data.format_mode, checklist_id))
+    if data.free_text is not None:
+        conn.execute("UPDATE custom_checklists SET free_text=? WHERE id=?", (data.free_text, checklist_id))
     if data.typical_govt_fee is not None:
         conn.execute("UPDATE custom_checklists SET typical_govt_fee=? WHERE id=?", (data.typical_govt_fee, checklist_id))
-    if data.format_options is not None:
-        conn.execute("UPDATE custom_checklists SET format_options_json=? WHERE id=?",
-                     (json.dumps(data.format_options.dict()), checklist_id))
     conn.execute("UPDATE custom_checklists SET updated_at=CURRENT_TIMESTAMP WHERE id=?", (checklist_id,))
     conn.commit(); conn.close()
     return {"status": "updated"}
@@ -599,49 +579,123 @@ def delete_checklist(checklist_id: int, admin=Depends(require_roles("visa_staff"
     return {"status": "deleted"}
 
 
-def _build_checklist_story(rows, styles):
-    """
-    Shared builder for the VFS-style checklist export: header block
-    (country, visa type, service charge) followed by a document list.
+# ══════════════════════════════════════════════════════════════════════════════
+# INSTANT QUOTE CALCULATOR
+# ══════════════════════════════════════════════════════════════════════════════
 
-    Every piece of user-entered text (country, visa type, document/instruction
-    text) is XML-escaped before being handed to reportlab's Paragraph, which
-    otherwise interprets raw '&', '<', '>' as markup — this was the source of
-    the broken/garbled formatting on export whenever a document name or
-    instruction contained one of those characters (e.g. "Bank Statement &
-    ITR", "Income < 5 LPA").
-
-    Layout (list style, font size, bold document names) is read per-checklist
-    from format_options_json, set when the checklist is created/edited, so
-    each checklist can be exported in its own freely-chosen style.
+@app.get("/admin/quote")
+def instant_quote(country: str, visa_type: str, group_size: int = 1, admin=Depends(require_admin)):
     """
+    Look up the best-matching checklist for a country + visa type and return
+    an instant estimated quote: agency service fee + typical government fee,
+    scaled by group size. Falls back gracefully if no checklist exists yet.
+    """
+    conn = get_db()
+    checklist = conn.execute("""
+        SELECT * FROM custom_checklists
+        WHERE LOWER(country)=LOWER(?) AND LOWER(visa_type)=LOWER(?)
+        ORDER BY is_default DESC, updated_at DESC LIMIT 1
+    """, (country, visa_type)).fetchone()
+
+    if not checklist:
+        # Fall back to any checklist for that country regardless of visa type
+        checklist = conn.execute("""
+            SELECT * FROM custom_checklists
+            WHERE LOWER(country)=LOWER(?)
+            ORDER BY is_default DESC, updated_at DESC LIMIT 1
+        """, (country,)).fetchone()
+
+    conn.close()
+
+    if not checklist:
+        return {
+            "found": False,
+            "message": f"No pricing on file yet for {country} — {visa_type}. Add a VFS checklist with pricing to enable instant quotes.",
+            "country": country, "visa_type": visa_type, "group_size": group_size,
+        }
+
+    cl = dict(checklist)
+    service_fee_per_person = cl["final_price"] or cl["base_price"] or 0
+    govt_fee_per_person     = cl["typical_govt_fee"] or 0
+
+    service_total = round(service_fee_per_person * group_size, 2)
+    govt_total    = round(govt_fee_per_person * group_size, 2)
+    grand_total   = round(service_total + govt_total, 2)
+
+    return {
+        "found": True,
+        "country": cl["country"],
+        "visa_type": cl["visa_type"],
+        "checklist_name": cl["name"],
+        "group_size": group_size,
+        "per_person": {
+            "service_fee": service_fee_per_person,
+            "govt_fee":    govt_fee_per_person,
+            "total":       round(service_fee_per_person + govt_fee_per_person, 2),
+        },
+        "group_total": {
+            "service_fee": service_total,
+            "govt_fee":    govt_total,
+            "total":       grand_total,
+        },
+        "documents_required": json.loads(cl["documents_json"]),
+    }
+
+@app.get("/admin/quote/countries")
+def quote_available_countries(admin=Depends(require_admin)):
+    """List every country+visa_type combination that has pricing on file, for the quote form dropdown."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT DISTINCT country, visa_type FROM custom_checklists
+        ORDER BY country, visa_type
+    """).fetchall()
+    conn.close()
+    return {"combinations": [dict(r) for r in rows]}
+
+@app.post("/admin/checklists/export-pdf")
+def export_checklists_pdf(data: ExportChecklistsRequest, admin=Depends(require_admin)):
+    """
+    Generate a single PDF containing one formatted page per selected
+    checklist (numbered list, or freely-typed text if the checklist was
+    saved with format_mode='freeform'), optionally followed by one page
+    per selected letter template.
+    """
+    if not data.checklist_ids:
+        raise HTTPException(400, "Select at least one checklist to export")
+
+    from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib import colors
-    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, PageBreak
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
-    from xml.sax.saxutils import escape
-    import re
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from xml.sax.saxutils import escape as _esc
 
-    def _preserve_typed_formatting(text: str) -> str:
-        """
-        Render exactly as typed: every line break and every run of
-        indentation/spacing the user put in a document/instruction box is
-        kept in place, instead of reportlab's default behaviour of
-        collapsing all whitespace and reflowing everything into one
-        justified block. A single space between words still wraps normally
-        at the page edge — only intentional formatting (line breaks,
-        leading indentation, multi-space alignment) is preserved verbatim.
-        """
-        escaped = escape(str(text))
-        out_lines = []
-        for line in escaped.split("\n"):
-            stripped = line.lstrip(" \t")
-            leading = line[:len(line) - len(stripped)]
-            leading_html = leading.replace("\t", "&nbsp;" * 4).replace(" ", "&nbsp;")
-            body = re.sub(r' {2,}', lambda m: "&nbsp;" * len(m.group()), stripped)
-            out_lines.append(leading_html + body)
-        return "<br/>".join(out_lines)
+    conn = get_db()
+    placeholders = ",".join("?" * len(data.checklist_ids))
+    rows = conn.execute(
+        f"SELECT * FROM custom_checklists WHERE id IN ({placeholders}) ORDER BY country, visa_type",
+        data.checklist_ids
+    ).fetchall()
+
+    letter_rows = []
+    if data.letter_template_ids:
+        lt_placeholders = ",".join("?" * len(data.letter_template_ids))
+        letter_rows = conn.execute(
+            f"SELECT * FROM letter_templates WHERE id IN ({lt_placeholders}) ORDER BY template_type",
+            data.letter_template_ids
+        ).fetchall()
+    conn.close()
+
+    if not rows:
+        raise HTTPException(404, "No matching checklists found")
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(
+        tmp.name, pagesize=A4,
+        topMargin=20*mm, bottomMargin=20*mm, leftMargin=20*mm, rightMargin=20*mm
+    )
+    styles = getSampleStyleSheet()
 
     title_style = ParagraphStyle(
         "ChecklistTitle", parent=styles["Title"], fontSize=16,
@@ -655,30 +709,32 @@ def _build_checklist_story(rows, styles):
         "SectionHeader", parent=styles["Heading2"], fontSize=12,
         textColor=colors.HexColor("#1e3a5f"), spaceBefore=10, spaceAfter=8
     )
+    doc_item_style = ParagraphStyle(
+        "DocItem", parent=styles["Normal"], fontSize=10.5, leading=16, spaceAfter=4
+    )
+    freeform_style = ParagraphStyle(
+        "Freeform", parent=styles["Normal"], fontSize=10.5, leading=15, spaceAfter=6
+    )
     footer_style = ParagraphStyle(
         "Footer", parent=styles["Normal"], fontSize=8,
         textColor=colors.HexColor("#888888"), spaceBefore=20
     )
 
+    total_pages = len(rows) + len(letter_rows)
     story = []
-    for i, row in enumerate(rows):
+    page_num = 0
+
+    for row in rows:
+        page_num += 1
         cl = dict(row)
         documents = json.loads(cl["documents_json"])
-        fmt = _parse_format_options(cl.get("format_options_json"))
-        font_size = fmt.get("font_size", 10.5)
-        list_style = fmt.get("list_style", "checkbox")
-        bold_items = fmt.get("bold_items", False)
-        doc_item_style = ParagraphStyle(
-            f"DocItem{i}", parent=styles["Normal"], fontSize=font_size,
-            leading=font_size * 1.5, spaceAfter=4, alignment=TA_LEFT
-        )
 
         story.append(Paragraph("UNIGLOBE MKOV TRAVEL", title_style))
         story.append(Paragraph("Visa Document Checklist", subtitle_style))
 
         # Header info block — name/passport/email/mobile fields for the applicant to fill in
         header_data = [
-            ["Country:", escape(cl["country"]), "Visa Type:", escape(cl["visa_type"].title())],
+            ["Country:", cl["country"], "Visa Type:", cl["visa_type"].title()],
             ["Applicant Name:", "_" * 28, "Passport No.:", "_" * 20],
             ["Email ID:", "_" * 28, "Mobile No.:", "_" * 20],
         ]
@@ -698,12 +754,18 @@ def _build_checklist_story(rows, styles):
             story.append(Paragraph(f"Service Charge: Rs. {cl['final_price']:.2f}", section_style))
 
         story.append(Paragraph("Required Documents", section_style))
-        for idx, item in enumerate(documents, 1):
-            safe_item = _preserve_typed_formatting(item)
-            if bold_items:
-                safe_item = f"<b>{safe_item}</b>"
-            prefix = {"numbered": f"{idx}.", "bulleted": "\u2022"}.get(list_style, f"{idx}. [ ]")
-            story.append(Paragraph(f"{prefix} {safe_item}", doc_item_style))
+
+        if cl.get("format_mode") == "freeform" and (cl.get("free_text") or "").strip():
+            # Staff-typed free-form text — rendered as-typed. Blank lines become
+            # paragraph spacing instead of being force-fit into a numbered list.
+            for line in cl["free_text"].split("\n"):
+                if line.strip() == "":
+                    story.append(Spacer(1, 8))
+                else:
+                    story.append(Paragraph(_esc(line), freeform_style))
+        else:
+            for idx, item in enumerate(documents, 1):
+                story.append(Paragraph(f"{idx}. [ ] {_esc(str(item))}", doc_item_style))
 
         story.append(Paragraph(
             "Please ensure all documents are originals or self-attested photocopies as applicable. "
@@ -715,119 +777,36 @@ def _build_checklist_story(rows, styles):
             footer_style
         ))
 
-        if i < len(rows) - 1:
+        if page_num < total_pages:
             story.append(PageBreak())
 
-    return story
+    for lrow in letter_rows:
+        page_num += 1
+        lt = dict(lrow)
 
+        story.append(Paragraph("UNIGLOBE MKOV TRAVEL", title_style))
+        story.append(Paragraph(f"{lt['template_type'].replace('_',' ').title()} Letter", subtitle_style))
 
-@app.post("/admin/checklists/export-pdf")
-def export_checklists_pdf(data: ExportChecklistsRequest, admin=Depends(require_admin)):
-    """
-    Generate a single PDF containing one formatted page per selected
-    checklist, in the standard VFS-style layout: header block (country,
-    visa type, service charge) followed by a document list. Each
-    checklist's list style / font size / bold formatting is whatever was
-    chosen for it in the checklist editor (see format_options_json).
-    """
-    if not data.checklist_ids:
-        raise HTTPException(400, "Select at least one checklist to export")
+        meta_bits = [b for b in [lt.get("country"), lt.get("visa_type")] if b]
+        if meta_bits:
+            story.append(Paragraph(_esc(" · ".join(meta_bits)), footer_style))
+            story.append(Spacer(1, 10))
 
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate
-    from reportlab.lib.styles import getSampleStyleSheet
+        if lt.get("subject"):
+            story.append(Paragraph(_esc(lt["subject"]), section_style))
 
-    conn = get_db()
-    placeholders = ",".join("?" * len(data.checklist_ids))
-    rows = conn.execute(
-        f"SELECT * FROM custom_checklists WHERE id IN ({placeholders}) ORDER BY country, visa_type",
-        data.checklist_ids
-    ).fetchall()
-    conn.close()
+        for line in (lt.get("body_template") or "").split("\n"):
+            if line.strip() == "":
+                story.append(Spacer(1, 8))
+            else:
+                story.append(Paragraph(_esc(line), freeform_style))
 
-    if not rows:
-        raise HTTPException(404, "No matching checklists found")
-
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    doc = SimpleDocTemplate(
-        tmp.name, pagesize=A4,
-        topMargin=20*mm, bottomMargin=20*mm, leftMargin=20*mm, rightMargin=20*mm
-    )
-    story = _build_checklist_story(rows, getSampleStyleSheet())
-    doc.build(story)
-
-    filename = "vfs_checklist_export.pdf" if len(rows) > 1 else f"{rows[0]['country']}_{rows[0]['visa_type']}_checklist.pdf"
-    return FileResponse(tmp.name, filename=filename, media_type="application/pdf")
-
-
-@app.post("/admin/checklists/export-pdf-with-letters")
-def export_checklists_with_letters(data: ExportChecklistsWithLettersRequest, admin=Depends(require_admin)):
-    """
-    Same export as /admin/checklists/export-pdf, but can also append one or
-    more generated letter templates (cover letter, authority letter, etc.)
-    to the end of the same PDF, filled in with a specific client's details.
-    """
-    if not data.checklist_ids and not data.letter_template_ids:
-        raise HTTPException(400, "Select at least one checklist or letter template to export")
-    if data.letter_template_ids and not data.client_id:
-        raise HTTPException(400, "Select a client to fill in the letter template(s)")
-
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import mm
-    from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from xml.sax.saxutils import escape
-
-    styles = getSampleStyleSheet()
-    conn = get_db()
-    story = []
-
-    if data.checklist_ids:
-        placeholders = ",".join("?" * len(data.checklist_ids))
-        rows = conn.execute(
-            f"SELECT * FROM custom_checklists WHERE id IN ({placeholders}) ORDER BY country, visa_type",
-            data.checklist_ids
-        ).fetchall()
-        if not rows:
-            conn.close(); raise HTTPException(404, "No matching checklists found")
-        story += _build_checklist_story(rows, styles)
-
-    if data.letter_template_ids:
-        if story:
+        if page_num < total_pages:
             story.append(PageBreak())
-        header_style = ParagraphStyle(
-            "LetterHeader", parent=styles["Heading1"], fontSize=14,
-            textColor=colors.HexColor("#1e3a5f"), spaceAfter=16
-        )
-        body_style = ParagraphStyle("LetterBody", parent=styles["Normal"], fontSize=11, leading=17)
 
-        for i, template_id in enumerate(data.letter_template_ids):
-            letter = _render_letter(conn, template_id, data.client_id, data.app_id)
-            story.append(Paragraph("Uniglobe MKOV Travel", header_style))
-            for para in letter["body"].split("\n\n"):
-                for line in para.split("\n"):
-                    story.append(Paragraph(escape(line) if line.strip() else "&nbsp;", body_style))
-                story.append(Spacer(1, 6))
-            if i < len(data.letter_template_ids) - 1:
-                story.append(PageBreak())
-
-    conn.close()
-
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    doc = SimpleDocTemplate(
-        tmp.name, pagesize=A4,
-        topMargin=20*mm, bottomMargin=20*mm, leftMargin=20*mm, rightMargin=20*mm
-    )
     doc.build(story)
 
-    if data.checklist_ids and data.letter_template_ids:
-        filename = "vfs_checklist_with_letters.pdf"
-    elif data.checklist_ids:
-        filename = "vfs_checklist_export.pdf"
-    else:
-        filename = "letter_templates_export.pdf"
+    filename = "vfs_checklist_export.pdf" if total_pages > 1 else f"{rows[0]['country']}_{rows[0]['visa_type']}_checklist.pdf"
     return FileResponse(tmp.name, filename=filename, media_type="application/pdf")
 
 
@@ -994,35 +973,14 @@ async def client_upload_doc(app_id: str, doc_type: str = Form(...), file: Upload
     client_row = conn.execute("SELECT * FROM clients WHERE email=?", (client["sub"],)).fetchone()
     app = conn.execute("SELECT * FROM applications WHERE app_id=? AND client_id=?", (app_id, client_row["id"])).fetchone()
     if not app: conn.close(); raise HTTPException(404, "Not found")
-    content = await file.read()
     ext = os.path.splitext(file.filename)[1]
     file_name = f"{app_id}_{doc_type}_{uuid.uuid4().hex[:8]}{ext}"
     file_path = os.path.join(UPLOAD_DIR, file_name)
     with open(file_path, "wb") as f:
-        f.write(content)
+        shutil.copyfileobj(file.file, f)
     now = now_ist_str()
     conn.execute("UPDATE documents SET status='uploaded', file_name=?, file_path=?, uploaded_at=? WHERE app_id=? AND doc_type=?",
                  (file_name, file_path, now, app_id, doc_type))
-
-    # Same fix as the admin upload paths: a client uploading their own
-    # passport here should also sync to their profile so it turns up on the
-    # Expiry Tracker, not just the document checklist.
-    if doc_type == "passport":
-        extracted = _run_ocr(content, file.filename or "")
-        field_map = {
-            "passport_number": extracted.get("passport_no"),
-            "passport_dob":    extracted.get("dob"),
-            "passport_expiry": extracted.get("expiry_date"),
-        }
-        sets, values = [], []
-        for col, val in field_map.items():
-            if val:
-                sets.append(f"{col}=?")
-                values.append(val)
-        if sets:
-            values.append(client_row["id"])
-            conn.execute(f"UPDATE clients SET {', '.join(sets)} WHERE id=?", values)
-
     conn.execute("INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
                  (app_id, f"client:{client_row['name']}", "Document uploaded", f"Uploaded {doc_type}: {file_name}"))
     conn.commit(); conn.close()
@@ -1195,27 +1153,9 @@ async def admin_upload_passport(
         "UPDATE clients SET passport_b64=?, passport_filename=? WHERE id=?",
         (b64, file.filename, client_id)
     )
-
-    # Same fix as the other passport upload paths — run OCR and sync
-    # number/DOB/expiry so this client shows up on the Expiry Tracker too.
-    extracted = _run_ocr(content, file.filename or "")
-    field_map = {
-        "passport_number": extracted.get("passport_no"),
-        "passport_dob":    extracted.get("dob"),
-        "passport_expiry": extracted.get("expiry_date"),
-    }
-    sets, values = [], []
-    for col, val in field_map.items():
-        if val:
-            sets.append(f"{col}=?")
-            values.append(val)
-    if sets:
-        values.append(client_id)
-        conn.execute(f"UPDATE clients SET {', '.join(sets)} WHERE id=?", values)
-
     conn.commit()
     conn.close()
-    return {"status": "uploaded", "filename": file.filename, "extracted": extracted}
+    return {"status": "uploaded", "filename": file.filename}
 
 
 # ── UPLOAD document for specific application ──────────────────────────────────
@@ -1255,32 +1195,6 @@ async def admin_upload_doc(
             VALUES (?,?,?,?,?,?)
         """, (app_id, doc_type, file.filename, b64, "uploaded", now))
 
-    # This is the document checklist most people actually use to submit a
-    # passport (as opposed to the separate Document Vault feature) — it was
-    # never wired up to run OCR or sync the client's passport_expiry, which
-    # is exactly why a passport uploaded here never showed up on the Expiry
-    # Tracker even after upload. Run the same OCR + sync the vault upload
-    # does, only ever writing fields OCR actually managed to read.
-    if doc_type == "passport":
-        extracted = _run_ocr(content, file.filename or "")
-        conn.execute(
-            "UPDATE clients SET passport_b64=?, passport_filename=? WHERE id=?",
-            (b64, file.filename, app["client_id"])
-        )
-        field_map = {
-            "passport_number": extracted.get("passport_no"),
-            "passport_dob":    extracted.get("dob"),
-            "passport_expiry": extracted.get("expiry_date"),
-        }
-        sets, values = [], []
-        for col, val in field_map.items():
-            if val:
-                sets.append(f"{col}=?")
-                values.append(val)
-        if sets:
-            values.append(app["client_id"])
-            conn.execute(f"UPDATE clients SET {', '.join(sets)} WHERE id=?", values)
-
     conn.execute(
         "INSERT INTO activity_log (app_id, actor, action, detail) VALUES (?,?,?,?)",
         (app_id, f"admin:{admin['name']}", "Document uploaded",
@@ -1288,8 +1202,7 @@ async def admin_upload_doc(
     )
     conn.commit()
     conn.close()
-    return {"status": "uploaded", "doc_type": doc_type, "filename": file.filename,
-            "extracted": extracted if doc_type == "passport" else None}
+    return {"status": "uploaded", "doc_type": doc_type, "filename": file.filename}
 
 
 # ── GET document as base64 (admin) ───────────────────────────────────────────
@@ -1846,19 +1759,12 @@ def get_lead(lead_id: int, admin=Depends(require_roles("sales"))):
 
 @app.post("/admin/leads")
 def create_lead(data: NewLeadRequest, admin=Depends(require_roles("sales"))):
-    # Assigning a lead to a staff member is restricted to Sales Admin, Visa
-    # Admin, and Superadmin — plain sales staff can still create leads, just
-    # not pick who it goes to.
-    assigned_to = data.assigned_to
-    if assigned_to is not None and admin.get("role") not in (*LEAD_ASSIGNER_ROLES, "superadmin", "staff"):
-        assigned_to = None
-
     conn = get_db()
     conn.execute("""
         INSERT INTO leads (name, email, phone, destination, visa_type, source, notes, assigned_to, created_by)
         VALUES (?,?,?,?,?,?,?,?,?)
     """, (data.name, data.email, data.phone, data.destination, data.visa_type,
-          data.source, data.notes, assigned_to, admin["name"]))
+          data.source, data.notes, data.assigned_to, admin["name"]))
     conn.commit()
     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.close()
@@ -1873,19 +1779,14 @@ def update_lead(lead_id: int, data: UpdateLeadRequest, admin=Depends(require_rol
         conn.close()
         raise HTTPException(404, "Lead not found")
 
-    # Same restriction as create_lead: reassigning who a lead belongs to is
-    # limited to Sales Admin, Visa Admin, and Superadmin. Everything else on
-    # this endpoint (status, notes, contact details) stays open to sales staff.
-    assigned_to = data.assigned_to
-    if assigned_to is not None and admin.get("role") not in (*LEAD_ASSIGNER_ROLES, "superadmin", "staff"):
-        conn.close()
-        raise HTTPException(403, "Only Sales Admin, Visa Admin, or Superadmin can assign leads")
-
     sets, values = ["updated_at=CURRENT_TIMESTAMP"], []
     fields = {
+        # NOTE: "assigned_to" is intentionally excluded here — reassigning a
+        # lead is restricted to Sales Admin / Visa Admin / Superadmin and goes
+        # through the dedicated PUT /admin/lead/{lead_id}/assign endpoint below.
         "name": data.name, "email": data.email, "phone": data.phone,
         "destination": data.destination, "visa_type": data.visa_type,
-        "status": data.status, "assigned_to": assigned_to, "notes": data.notes,
+        "status": data.status, "notes": data.notes,
     }
     for col, val in fields.items():
         if val is not None:
@@ -1899,25 +1800,39 @@ def update_lead(lead_id: int, data: UpdateLeadRequest, admin=Depends(require_rol
     return {"status": "updated"}
 
 
-@app.post("/admin/lead/{lead_id}/assign")
-def assign_lead(lead_id: int, data: AssignLeadRequest, admin=Depends(require_roles(*LEAD_ASSIGNER_ROLES))):
-    """
-    Assign (or unassign) a lead to a staff member.
-    Restricted to Sales Admin, Visa Admin, and Superadmin — require_roles()
-    already lets superadmin/staff through regardless of the roles listed.
-    """
+@app.get("/admin/staff/assignable")
+def list_assignable_staff(admin=Depends(require_lead_assigner)):
+    """Basic staff roster for the lead-assignment dropdown — restricted to
+    Sales Admin / Visa Admin / Superadmin, same as the assign action itself."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, name, role FROM admin_users WHERE active=1 ORDER BY name"
+    ).fetchall()
+    conn.close()
+    return {"staff": [dict(r) for r in rows]}
+
+
+@app.put("/admin/lead/{lead_id}/assign")
+def assign_lead(lead_id: int, data: AssignLeadRequest, admin=Depends(require_lead_assigner)):
+    """Assign (or unassign, if assigned_to is null) a lead to a staff member.
+    Restricted to Sales Admin, Visa Admin, and Superadmin."""
     conn = get_db()
     lead = conn.execute("SELECT id FROM leads WHERE id=?", (lead_id,)).fetchone()
     if not lead:
         conn.close()
         raise HTTPException(404, "Lead not found")
+    if data.assigned_to is not None:
+        staff = conn.execute("SELECT id FROM admin_users WHERE id=? AND active=1", (data.assigned_to,)).fetchone()
+        if not staff:
+            conn.close()
+            raise HTTPException(400, "Selected staff member not found or inactive")
     conn.execute(
         "UPDATE leads SET assigned_to=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (data.assigned_to, lead_id)
     )
     conn.commit()
     conn.close()
-    return {"status": "assigned", "lead_id": lead_id, "assigned_to": data.assigned_to}
+    return {"status": "assigned"}
 
 
 @app.delete("/admin/lead/{lead_id}")
@@ -2972,33 +2887,15 @@ async def vault_upload(
     """, (client_id, doc_type, file.filename, b64, mime,
           json.dumps(extracted), admin["name"]))
 
-    if doc_type == "passport":
-        # Always keep the scan itself on the client profile...
+    # If passport, push extracted fields to client profile as structured data
+    if doc_type == "passport" and extracted:
         conn.execute(
-            "UPDATE clients SET passport_b64=?, passport_filename=? WHERE id=?",
-            (b64, file.filename, client_id)
+            "UPDATE clients SET passport_b64=?, passport_filename=?, "
+            "passport_number=?, passport_dob=?, passport_expiry=? WHERE id=?",
+            (b64, file.filename,
+             extracted.get("passport_no"), extracted.get("dob"),
+             extracted.get("expiry_date"), client_id)
         )
-        # ...but only overwrite the structured fields (number/DOB/expiry) with
-        # what OCR actually managed to read. Previously this always wrote
-        # extracted.get(...) even when OCR failed or wasn't available on this
-        # server, which silently set passport_expiry to NULL on every upload
-        # that didn't successfully OCR — and that's exactly why a client with
-        # a passport on file would never show up on the Expiry Tracker (it
-        # filters out anyone with no expiry on record). Now a failed/partial
-        # scan just leaves whatever was already on file untouched.
-        field_map = {
-            "passport_number": extracted.get("passport_no"),
-            "passport_dob":    extracted.get("dob"),
-            "passport_expiry": extracted.get("expiry_date"),
-        }
-        sets, values = [], []
-        for col, val in field_map.items():
-            if val:
-                sets.append(f"{col}=?")
-                values.append(val)
-        if sets:
-            values.append(client_id)
-            conn.execute(f"UPDATE clients SET {', '.join(sets)} WHERE id=?", values)
 
     conn.commit()
     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -3142,14 +3039,7 @@ def _run_ocr(content: bytes, filename: str) -> dict:
             except Exception:
                 return {}
         img  = Image.open(io.BytesIO(content))
-        try:
-            text = pytesseract.image_to_string(img, lang="eng")
-        except pytesseract.pytesseract.TesseractNotFoundError:
-            # The pip package is installed but the actual `tesseract` binary
-            # isn't on this machine (common on a fresh Render instance) —
-            # tell the frontend clearly rather than falling through to a
-            # generic error, so the user is prompted to enter details by hand.
-            return {"ocr_unavailable": True}
+        text = pytesseract.image_to_string(img, lang="eng")
         lines = [l.strip() for l in text.split("\n") if l.strip()]
         mrz   = [l for l in lines if len(l) >= 30 and "<" in l]
         result = {}
@@ -3341,34 +3231,32 @@ def create_letter_template(data: NewLetterTemplateRequest, admin=Depends(require
     conn.close()
     return {"status":"created","id":new_id}
 
-def _render_letter(conn, template_id: int, client_id: int, app_id: Optional[str] = None) -> dict:
-    """
-    Fill a letter template with real client/application data and return the
-    rendered subject/body. Shared by the standalone letter-generation
-    endpoints and by the combined checklist+letters export. Takes an
-    already-open connection and does not close it — the caller owns that.
-    """
-    template = conn.execute("SELECT * FROM letter_templates WHERE id=?", (template_id,)).fetchone()
+@app.post("/admin/letter-templates/generate")
+def generate_letter(data: GenerateLetterRequest, admin=Depends(require_admin)):
+    """Fill a template with real client/application data and return the rendered text."""
+    conn = get_db()
+    template = conn.execute("SELECT * FROM letter_templates WHERE id=?", (data.template_id,)).fetchone()
     if not template:
-        raise HTTPException(404, "Template not found")
+        conn.close(); raise HTTPException(404, "Template not found")
 
-    client = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+    client = conn.execute("SELECT * FROM clients WHERE id=?", (data.client_id,)).fetchone()
     if not client:
-        raise HTTPException(404, "Client not found")
+        conn.close(); raise HTTPException(404, "Client not found")
 
     app_row, docs = None, []
-    if app_id:
-        app_row = conn.execute("SELECT * FROM applications WHERE app_id=?", (app_id,)).fetchone()
+    if data.app_id:
+        app_row = conn.execute("SELECT * FROM applications WHERE app_id=?", (data.app_id,)).fetchone()
         docs    = conn.execute(
-            "SELECT doc_type FROM documents WHERE app_id=?", (app_id,)
+            "SELECT doc_type FROM documents WHERE app_id=?", (data.app_id,)
         ).fetchall()
 
     # Pull OCR data from vault if available
     vault_passport = conn.execute(
         "SELECT extracted_data FROM document_vault WHERE client_id=? AND doc_type='passport' ORDER BY uploaded_at DESC LIMIT 1",
-        (client_id,)
+        (data.client_id,)
     ).fetchone()
     ocr = json.loads(vault_passport["extracted_data"]) if vault_passport and vault_passport["extracted_data"] else {}
+    conn.close()
 
     today = now_ist().strftime("%d %B %Y")
     docs_list = "\n".join(f"[ ] {r['doc_type'].replace('_',' ').title()}" for r in docs) if docs else "[ ] See attached checklist"
@@ -3383,7 +3271,7 @@ def _render_letter(conn, template_id: int, client_id: int, app_id: Optional[str]
         "{{destination}}":   app_row["destination"] if app_row else "[DESTINATION]",
         "{{visa_type}}":     app_row["visa_type"].title() if app_row else "[VISA TYPE]",
         "{{travel_date}}":   app_row["travel_date"] if app_row else "[TRAVEL DATE]",
-        "{{app_id}}":        app_id or "",
+        "{{app_id}}":        data.app_id or "",
         "{{documents_list}}": docs_list,
         "{{today}}":         today,
     }
@@ -3397,15 +3285,6 @@ def _render_letter(conn, template_id: int, client_id: int, app_id: Optional[str]
         "body":    body,
         "template_type": dict(template)["template_type"]
     }
-
-@app.post("/admin/letter-templates/generate")
-def generate_letter(data: GenerateLetterRequest, admin=Depends(require_admin)):
-    """Fill a template with real client/application data and return the rendered text."""
-    conn = get_db()
-    try:
-        return _render_letter(conn, data.template_id, data.client_id, data.app_id)
-    finally:
-        conn.close()
 
 @app.post("/admin/letter-templates/generate-pdf")
 def generate_letter_pdf(data: GenerateLetterRequest, admin=Depends(require_admin)):
